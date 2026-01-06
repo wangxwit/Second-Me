@@ -253,26 +253,698 @@ stateDiagram-v2
 ## 9. API 接口与工程结构 (Engineering Interface)
 
 ### 9.1 API 规范 (Flask Blueprints)
-| 模块 | 路由前缀 | 功能描述 |
-| :--- | :--- | :--- |
-| **Upload** | `/upload` | 多模态上传入口。 |
-| **Documents** | `/documents` | L0 洞察触发与管理。 |
-| **Memories** | `/memories` | L1 向量检索与聚类视图。 |
-| **Kernel2** | `/kernel2` | L2 训练控制 (Start/Stop/Status)。 |
-| **Talk** | `/talk` | 实时对话 (Stream/JSON)。 |
 
-### 9.2 项目目录
+#### 9.1.1 核心 API 模块
+
+| 模块 | 路由前缀 | 功能描述 | 主要端点 |
+| :--- | :--- | :--- | :--- |
+| **Health** | `/api/health` | 健康检查与系统状态 | `GET /health` |
+| **Upload** | `/api/upload` | 多模态上传入口 | `POST /register` |
+| **Documents** | `/api/documents` | L0 洞察触发与管理 | `GET /list`, `POST /scan` |
+| **Memories** | `/api/memories` | L1 向量检索与聚类视图 | `POST /upload` |
+| **Kernel** | `/api/kernel` | L1 生成与版本管理 | `POST /generate`, `GET /versions` |
+| **Kernel2** | `/api/kernel2` | L2 训练控制与对话服务 | `POST /chat`, `GET /health`, `POST /train/start` |
+| **Talk** | `/api/talk` | 实时对话 (Stream/JSON) | `POST /chat`, `POST /chat/json` |
+| **Space** | `/api/space` | 多智能体协作空间 | `POST /create`, `GET /<space_id>` |
+| **Roles** | `/api/kernel2/roles` | 角色定义与管理 | `POST /create`, `GET /all` |
+| **TrainProcess** | `/api/trainprocess` | 训练流程控制 | `POST /start`, `GET /progress/<id>` |
+| **Loads** | `/api/loads` | 个人负载管理 | `POST /create`, `GET /current` |
+| **UserLLMConfig** | `/api/user_llm_config` | LLM 配置管理 | `POST /validate`, `GET /available` |
+
+#### 9.1.2 API 设计原则
+
+*   **RESTful 风格**: 遵循 REST 规范，使用标准 HTTP 方法。
+*   **统一响应格式**: 所有 API 返回 `APIResponse` 包装结构：
+    ```python
+    {
+        "code": 0,  # 0 表示成功，非 0 表示错误
+        "message": "Success",
+        "data": {...}
+    }
+    ```
+*   **流式响应**: 对话接口支持 Server-Sent Events (SSE) 流式输出。
+*   **DTO 验证**: 使用 Pydantic 进行请求参数校验。
+
+#### 9.1.3 关键 API 端点详解
+
+**对话接口 (`/api/kernel2/chat`)**:
+```python
+POST /api/kernel2/chat
+Content-Type: application/json
+Accept: text/event-stream
+
+Request:
+{
+    "messages": [{"role": "user", "content": "..."}],
+    "metadata": {
+        "enable_l0_retrieval": true,
+        "enable_l1_retrieval": true
+    },
+    "temperature": 0.7,
+    "stream": true
+}
+
+Response (SSE):
+data: {"choices": [{"delta": {"content": "..."}}]}
+...
+data: [DONE]
+```
+
+**Space 创建接口 (`/api/space/create`)**:
+```python
+POST /api/space/create
+{
+    "title": "讨论主题",
+    "objective": "讨论目标",
+    "host": "http://localhost:8002",
+    "participants": ["http://other-instance:8002"]
+}
+```
+
+### 9.2 数据模型与数据库 Schema
+
+#### 9.2.1 核心数据表
+
+**Document (文档表)**:
+```sql
+CREATE TABLE document (
+    id INTEGER PRIMARY KEY,
+    name VARCHAR(255),
+    title VARCHAR(511),
+    extract_status TEXT CHECK(...) DEFAULT 'INITIALIZED',
+    embedding_status TEXT CHECK(...) DEFAULT 'INITIALIZED',
+    analyze_status TEXT CHECK(...) DEFAULT 'INITIALIZED',
+    mime_type VARCHAR(50),
+    raw_content TEXT,
+    insight TEXT,  -- JSON
+    summary TEXT,  -- JSON
+    keywords TEXT,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Chunk (文档块表)**:
+```sql
+CREATE TABLE chunk (
+    id INTEGER PRIMARY KEY,
+    document_id INTEGER REFERENCES document(id),
+    content TEXT NOT NULL,
+    has_embedding BOOLEAN DEFAULT 0,
+    tags TEXT,  -- JSON
+    topic VARCHAR(255)
+);
+```
+
+**L1 版本化数据表**:
+*   `l1_versions`: L1 生成版本管理
+*   `l1_bios`: 全局传记 (含 third_view 和 second_view)
+*   `l1_shades`: 人格侧影 (含 Me-Aligned 描述)
+*   `l1_clusters`: 语义聚类结果
+*   `l1_chunk_topics`: 文档块主题标签
+
+**Status Biography (状态传记表)**:
+```sql
+CREATE TABLE status_biography (
+    id INTEGER PRIMARY KEY,
+    content TEXT NOT NULL,
+    content_third_view TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    summary_third_view TEXT NOT NULL,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Space (协作空间表)**:
+```sql
+CREATE TABLE spaces (
+    id VARCHAR(255) PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    objective TEXT NOT NULL,
+    participants TEXT NOT NULL,  -- JSON array
+    host VARCHAR(255) NOT NULL,
+    status INTEGER DEFAULT 1,
+    conclusion TEXT,
+    create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Roles (角色表)**:
+```sql
+CREATE TABLE roles (
+    id INTEGER PRIMARY KEY,
+    uuid VARCHAR(64) UNIQUE,
+    name VARCHAR(100) UNIQUE,
+    description VARCHAR(500),
+    system_prompt TEXT NOT NULL,
+    enable_l0_retrieval BOOLEAN DEFAULT 1,
+    enable_l1_retrieval BOOLEAN DEFAULT 1
+);
+```
+
+#### 9.2.2 向量数据库 (ChromaDB)
+
+**集合 (Collections)**:
+*   `documents`: 文档级向量存储
+*   `document_chunks`: 文档块级向量存储
+
+**配置**:
+*   **距离度量**: Cosine Similarity (`hnsw:space: cosine`)
+*   **维度**: 可配置 (默认 1536，支持 OpenAI/自定义 Embedding 模型)
+*   **持久化**: 本地文件系统 (`CHROMA_PERSIST_DIRECTORY`)
+
+**向量检索流程**:
+1. 生成查询向量 (Query Embedding)
+2. 调用 `collection.query(query_embeddings=[...], n_results=k)`
+3. 返回 Top-K 相似文档/块，包含距离分数
+
+### 9.3 项目目录结构
+
 ```bash
 Second-Me/
-├── docs/               # 架构与设计文档
-├── lpm_frontend/       # Next.js 可视化前端
-├── lpm_kernel/         # Python 智能核心
-│   ├── api/            # API Gateway & DTOs
-│   ├── L0/             # Perception Layer (Ingestion)
-│   ├── L1/             # Memory Layer (Storage & Graph)
-│   ├── L2/             # Evolution Layer (Training)
-│   ├── common/         # Infrastructure (DB/Log)
-│   └── app.py          # Entry Point
-├── docker/             # 容器编排
-└── Makefile            # 工程脚本
+├── docs/                      # 架构与设计文档
+│   ├── TECHNICAL_DESIGN.md    # 技术架构文档 (本文档)
+│   ├── Custom Model Config(Ollama).md
+│   └── Embedding Model Switching.md
+│
+├── lpm_frontend/              # Next.js 可视化前端
+│   ├── src/
+│   │   ├── app/               # Next.js App Router
+│   │   │   ├── dashboard/     # 仪表盘页面
+│   │   │   │   ├── playground/chat/    # 对话界面
+│   │   │   │   ├── train/training/      # 训练管理
+│   │   │   │   └── applications/        # 应用管理
+│   │   │   └── standalone/              # 独立页面
+│   │   │       ├── space/[spaceId]/     # Space 详情页
+│   │   │       └── role/[roleId]/       # 角色对话页
+│   │   ├── components/        # React 组件库
+│   │   │   ├── API_MCP/       # MCP 集成组件
+│   │   │   └── ...
+│   │   ├── hooks/              # React Hooks
+│   │   │   └── useSSE.tsx     # SSE 流式响应 Hook
+│   │   ├── service/            # API 服务层
+│   │   ├── store/              # 状态管理 (Zustand)
+│   │   └── utils/              # 工具函数
+│   └── next.config.js          # Next.js 配置 (含 API Proxy)
+│
+├── lpm_kernel/                # Python 智能核心
+│   ├── app.py                 # Flask 应用入口
+│   │
+│   ├── api/                   # API Gateway 层
+│   │   ├── domains/           # 领域模块 (按功能划分)
+│   │   │   ├── documents/     # 文档管理
+│   │   │   ├── kernel/        # L1 生成
+│   │   │   ├── kernel2/       # L2 训练与对话
+│   │   │   │   ├── services/  # 业务逻辑服务
+│   │   │   │   │   ├── chat_service.py
+│   │   │   │   │   ├── advanced_chat_service.py
+│   │   │   │   │   └── knowledge_service.py
+│   │   │   │   └── routes_talk.py
+│   │   │   ├── space/         # Space 多智能体协作
+│   │   │   │   ├── strategies/    # 策略模式实现
+│   │   │   │   └── services/      # 讨论服务
+│   │   │   ├── trainprocess/  # 训练流程控制
+│   │   │   └── upload/        # 文件上传
+│   │   ├── common/            # 公共组件
+│   │   │   └── responses.py   # 统一响应格式
+│   │   └── services/         # 共享服务
+│   │       ├── local_llm_service.py
+│   │       └── expert_llm_service.py
+│   │
+│   ├── L0/                    # L0: 感官与洞察层
+│   │   ├── l0_generator.py    # L0 生成器
+│   │   ├── models.py          # L0 数据模型
+│   │   └── prompt.py          # L0 Prompt 模板
+│   │
+│   ├── L1/                    # L1: 身份与结构层
+│   │   ├── l1_generator.py    # L1 生成器
+│   │   ├── bio.py             # Bio/Shade/Cluster 领域模型
+│   │   ├── shade_generator.py # Shade 生成
+│   │   └── topics_generator.py # 主题生成
+│   │
+│   ├── L2/                    # L2: 进化与合成层
+│   │   ├── train.py           # 训练主程序
+│   │   ├── data_pipeline/     # 数据合成流水线
+│   │   ├── mlx_training/      # MLX 训练支持
+│   │   ├── dpo/               # DPO 训练支持
+│   │   └── merge_lora_weights.py
+│   │
+│   ├── file_data/             # 文档处理模块
+│   │   ├── document_service.py
+│   │   ├── embedding_service.py
+│   │   ├── chunker.py         # 文档分块
+│   │   └── processors/        # 多模态处理器
+│   │       ├── image_processor.py
+│   │       ├── audio_processor.py
+│   │       └── text_processor.py
+│   │
+│   ├── kernel/                # 内核服务层
+│   │   ├── note_service.py   # Note 服务
+│   │   ├── chunk_service.py  # Chunk 服务
+│   │   └── l1/               # L1 管理
+│   │
+│   ├── common/                # 基础设施
+│   │   ├── llm.py            # LLM 客户端封装
+│   │   ├── repository/        # 数据访问层
+│   │   │   ├── database_session.py
+│   │   │   └── vector_repository.py
+│   │   └── strategy/         # 策略模式基类
+│   │
+│   ├── configs/               # 配置管理
+│   │   └── config.py          # 配置类 (单例模式)
+│   │
+│   └── database/              # 数据库迁移
+│       └── migrations/
+│
+├── mcp/                       # MCP 协议集成
+│   ├── mcp_local.py          # 本地 MCP 服务器
+│   └── mcp_public.py         # 公共 MCP 服务器
+│
+├── docker/                    # 容器编排
+│   ├── app/                   # 应用初始化脚本
+│   └── sqlite/                # 数据库初始化
+│       └── init.sql
+│
+├── resources/                 # 资源目录
+│   ├── L1/                    # L1 生成结果
+│   ├── L2/                    # L2 训练数据
+│   └── model/                 # 模型文件
+│
+├── scripts/                   # 工程脚本
+│   ├── start.sh              # 启动脚本
+│   ├── setup.sh              # 环境设置
+│   └── run_migrations.py     # 数据库迁移
+│
+├── docker-compose.yml         # Docker Compose 配置
+├── Dockerfile.backend         # 后端 Dockerfile
+├── Dockerfile.frontend        # 前端 Dockerfile
+└── Makefile                   # 工程自动化脚本
 ```
+
+---
+
+## 10. 前端架构详解 (Frontend Architecture)
+
+### 10.1 技术栈
+
+*   **框架**: Next.js 14+ (App Router)
+*   **UI 库**: Ant Design (antd)
+*   **样式**: TailwindCSS
+*   **状态管理**: Zustand
+*   **HTTP 客户端**: Axios
+*   **流式处理**: Server-Sent Events (SSE)
+
+### 10.2 核心组件架构
+
+**页面路由结构**:
+```
+/app
+├── dashboard/              # 仪表盘 (需认证)
+│   ├── playground/chat/    # 对话界面
+│   ├── train/training/     # 训练管理
+│   └── applications/       # 应用管理
+└── standalone/             # 独立页面 (可分享)
+    ├── space/[spaceId]/    # Space 详情页
+    └── role/[roleId]/      # 角色对话页
+```
+
+**状态管理 (Zustand Stores)**:
+*   `useLoadInfoStore`: 负载信息状态
+*   `useChatStorage`: 对话会话存储 (LocalStorage)
+*   `useSSE`: SSE 流式响应 Hook
+
+### 10.3 API 代理配置
+
+Next.js 通过 `rewrites` 将 `/api/*` 请求代理到后端:
+
+```javascript
+// next.config.js
+async rewrites() {
+    return [{
+        source: '/api/:path*',
+        destination: `${localApiBaseUrl}/api/:path*`
+    }];
+}
+```
+
+### 10.4 SSE 流式响应处理
+
+**Hook 实现** (`useSSE.tsx`):
+```typescript
+const sendStreamMessage = async (request: ChatRequest) => {
+    const response = await fetch('/api/kernel2/chat', {
+        method: 'POST',
+        headers: { 'Accept': 'text/event-stream' },
+        body: JSON.stringify(request)
+    });
+    
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    
+    // 解析 SSE 流
+    while (!done) {
+        const { value } = await reader.read();
+        const chunk = decoder.decode(value);
+        // 解析 "data: {...}" 格式
+    }
+};
+```
+
+---
+
+## 11. Space 多智能体协作机制 (Multi-Agent Collaboration)
+
+### 11.1 架构设计
+
+Space 是一个**去中心化的多智能体协作系统**，允许多个 Second Me 实例参与讨论。
+
+**核心概念**:
+*   **Host**: 讨论主持人，负责开场和总结
+*   **Participants**: 参与者列表 (可包含外部实例)
+*   **Round**: 讨论轮次 (固定 3 轮)
+*   **Context Manager**: 上下文管理器，维护讨论状态
+
+### 11.2 讨论流程
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Host as Host Instance
+    participant P1 as Participant 1
+    participant P2 as Participant 2
+    
+    User->>Host: POST /api/space/create
+    Host->>Host: 创建 Space 记录
+    Host->>Host: 启动讨论流程
+    
+    Host->>Host: HostOpeningStrategy
+    Host->>P1: HTTP POST (讨论上下文)
+    P1->>Host: 响应消息
+    Host->>P2: HTTP POST (讨论上下文)
+    P2->>Host: 响应消息
+    
+    loop 3 Rounds
+        Host->>P1: Round N 讨论
+        P1->>Host: 回复
+        Host->>P2: Round N 讨论
+        P2->>Host: 回复
+    end
+    
+    Host->>Host: HostSummaryStrategy
+    Host->>User: 返回完整讨论记录
+```
+
+### 11.3 策略模式实现
+
+**策略链 (Strategy Chain)**:
+1. **HostOpeningStrategy**: 主持人开场，设定讨论目标
+2. **ParticipantStrategy**: 参与者响应，基于上下文生成回复
+3. **HostSummaryStrategy**: 主持人总结，生成讨论结论
+
+**上下文管理**:
+*   `SpaceContextManager`: 维护当前轮次、历史消息、讨论目标
+*   每个策略通过 `context_manager` 获取上下文并更新状态
+
+### 11.4 跨实例通信
+
+**HTTP 调用协议**:
+```python
+POST {participant_endpoint}/api/kernel2/chat
+{
+    "messages": [
+        {"role": "system", "content": "讨论上下文..."},
+        {"role": "user", "content": "讨论问题"}
+    ]
+}
+```
+
+---
+
+## 12. MCP 协议集成 (Model Context Protocol)
+
+### 12.1 MCP 服务器实现
+
+**本地 MCP 服务器** (`mcp/mcp_local.py`):
+*   基于 `FastMCP` 框架
+*   提供 `get_response` Tool，调用本地 Second Me API
+*   支持 stdio 传输协议
+
+**使用场景**:
+*   作为 LLM 的工具调用接口
+*   允许外部 LLM 通过 MCP 访问 Second Me 能力
+
+### 12.2 MCP Tool 定义
+
+```python
+@mindv.tool()
+async def get_response(query: str) -> str:
+    """
+    Received a response based on local secondme model.
+    """
+    # 调用 /api/kernel2/chat
+    # 解析 SSE 流式响应
+    # 返回完整内容
+```
+
+---
+
+## 13. 配置管理系统 (Configuration Management)
+
+### 13.1 配置类设计
+
+**单例模式** (`Config`):
+*   从 `.env` 文件加载配置
+*   支持环境变量覆盖
+*   提供类型安全的配置访问
+
+**核心配置项**:
+```python
+@dataclass
+class Config:
+    app_name: str
+    version: str
+    database: DatabaseConfig
+    CHROMA_PERSIST_DIRECTORY: str
+    KERNEL2_SERVICE_URL: str
+    REGISTRY_SERVICE_URL: str
+    # ... 其他动态配置存储在 _extra_config
+```
+
+### 13.2 用户 LLM 配置
+
+**配置表** (`user_llm_configs`):
+*   **Chat 配置**: endpoint, api_key, model_name
+*   **Embedding 配置**: endpoint, api_key, model_name
+*   **Thinking 配置**: endpoint, api_key, model_name (用于 DeepSeek R1)
+
+**动态切换**:
+*   支持运行时切换 Embedding 模型
+*   自动检测 Embedding 维度并重建 ChromaDB Collection
+
+---
+
+## 14. 部署架构 (Deployment Architecture)
+
+### 14.1 Docker Compose 部署
+
+**服务组成**:
+```yaml
+services:
+  backend:
+    build: Dockerfile.backend
+    ports: ["8002:8002", "8080:8080"]
+    volumes:
+      - ./data:/app/data          # 数据持久化
+      - ./resources:/app/resources
+    environment:
+      - LOCAL_APP_PORT=8002
+      - IN_DOCKER_ENV=1
+  
+  frontend:
+    build: Dockerfile.frontend
+    ports: ["3000:3000"]
+    depends_on: [backend]
+```
+
+**资源限制**:
+*   Backend: 64GB 内存上限 (支持大模型推理)
+*   Frontend: 2GB 内存上限
+
+### 14.2 多平台支持
+
+**Dockerfile 变体**:
+*   `Dockerfile.backend`: 通用 Linux
+*   `Dockerfile.backend.apple`: Apple Silicon 优化
+*   `Dockerfile.backend.cuda`: CUDA GPU 支持
+
+### 14.3 数据持久化
+
+**Volume 挂载**:
+*   `./data`: SQLite 数据库、ChromaDB、日志
+*   `./resources`: 原始内容、训练数据、模型文件
+*   `./logs`: 应用日志
+
+---
+
+## 15. 错误处理与日志系统 (Error Handling & Logging)
+
+### 15.1 日志架构
+
+**日志配置** (`configs/logging.py`):
+*   **应用日志**: 标准 Python logging
+*   **训练日志**: 独立的训练进程日志 (`get_train_process_logger`)
+*   **日志级别**: DEBUG, INFO, WARNING, ERROR
+
+**日志输出**:
+*   控制台输出 (开发环境)
+*   文件输出 (`logs/` 目录)
+*   支持日志轮转
+
+### 15.2 错误处理策略
+
+**API 错误响应**:
+```python
+try:
+    # 业务逻辑
+    return APIResponse.success(data=result)
+except ValidationError as e:
+    return APIResponse.error(message=str(e), code=400)
+except Exception as e:
+    logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+    return APIResponse.error(message="Internal server error", code=500)
+```
+
+**训练流程错误**:
+*   训练步骤失败时记录进度状态
+*   支持断点续训 (通过进度 ID)
+
+---
+
+## 16. 性能优化策略 (Performance Optimization)
+
+### 16.1 推理优化
+
+**并发控制**:
+*   **严格队列**: `Concurrency=1`，防止 VRAM 溢出
+*   **请求队列**: 使用线程安全的队列管理请求
+
+**模型加载优化**:
+*   **量化**: 支持 4bit/8bit 量化 (QLoRA)
+*   **延迟加载**: 仅在需要时加载模型
+*   **显存释放**: 训练前主动释放推理模型显存
+
+### 16.2 向量检索优化
+
+**批量处理**:
+*   文档 Embedding 批量生成
+*   Chunk Embedding 批量存储
+
+**索引优化**:
+*   ChromaDB HNSW 索引自动优化
+*   支持维度不匹配检测与自动重建
+
+### 16.3 前端优化
+
+**SSE 流式渲染**:
+*   增量更新 UI，避免阻塞
+*   使用 `useRef` 缓存流式内容
+
+**API 代理缓存**:
+*   Next.js 代理层缓存静态资源
+*   禁用 API 响应缓存 (`Cache-Control: no-cache`)
+
+---
+
+## 17. 安全与隐私增强 (Security & Privacy Enhancements)
+
+### 17.1 数据隔离
+
+**多实例支持**:
+*   每个 Second Me 实例独立数据库
+*   通过 `instance_id` 和 `instance_password` 隔离
+
+### 17.2 隐私保护
+
+**PII 过滤** (规划中):
+*   推理后处理层过滤敏感信息
+*   支持自定义隐私规则
+
+**本地优先**:
+*   所有数据本地存储
+*   支持完全离线运行
+
+---
+
+## 18. 扩展性设计 (Extensibility)
+
+### 18.1 插件化架构
+
+**策略模式**:
+*   `BasePromptStrategy`: Prompt 构建策略基类
+*   `SystemPromptStrategy`: System Prompt 注入策略
+*   支持自定义策略链组合
+
+**处理器工厂** (`process_factory.py`):
+*   根据 MIME 类型动态选择处理器
+*   支持扩展新的文件类型处理器
+
+### 18.2 多后端支持
+
+**LLM 客户端抽象** (`common/llm.py`):
+*   统一的 LLM 调用接口
+*   支持 Ollama、OpenAI、自定义端点
+
+**向量数据库抽象** (`common/repository/vector_repository.py`):
+*   `BaseVectorRepository` 抽象基类
+*   当前实现: `ChromaRepository`
+*   支持扩展其他向量数据库 (如 Milvus、Pinecone)
+
+---
+
+## 19. 未来规划 (Roadmap)
+
+### 19.1 短期目标
+
+*   **GraphRAG 集成**: 增强 L1 层的关系图谱能力
+*   **DPO 训练支持**: 完善 L2 层的偏好对齐训练
+*   **WebSocket 支持**: 替代 SSE 实现双向通信
+
+### 19.2 中期目标
+
+*   **分布式训练**: 支持多机分布式 L2 训练
+*   **模型市场**: 共享与交易训练好的 L2 模型
+*   **移动端支持**: React Native 移动应用
+
+### 19.3 长期愿景
+
+*   **联邦学习**: 跨实例的知识共享与协作
+*   **多模态 L2**: 支持图像、音频的 L2 训练
+*   **实时同步**: 多设备间的实时记忆同步
+
+---
+
+## 附录 A: 关键术语表 (Glossary)
+
+| 术语 | 英文 | 定义 |
+| :--- | :--- | :--- |
+| **L0** | Layer 0 | 感官与洞察层，负责原始数据的处理与摘要生成 |
+| **L1** | Layer 1 | 身份与结构层，负责记忆的聚类与人格侧影生成 |
+| **L2** | Layer 2 | 进化与合成层，负责将显性知识内化为模型权重 |
+| **HMM** | Hierarchical Memory Modeling | 分层记忆建模，构建金字塔式的记忆结构 |
+| **Me-Alignment** | Me-Alignment | 自我对齐算法，实现第三人称到第一人称的视角转换 |
+| **Shade** | Shade | 人格侧影，代表用户的某个兴趣领域或身份侧面 |
+| **Bio** | Biography | 全局传记，用户的完整人格画像 |
+| **Space** | Space | 多智能体协作空间，支持多个 Second Me 实例参与讨论 |
+| **MCP** | Model Context Protocol | 模型上下文协议，用于 LLM 与工具/环境的交互 |
+| **LoRA** | Low-Rank Adaptation | 低秩适应，高效的模型微调技术 |
+
+---
+
+## 附录 B: 参考资源 (References)
+
+*   **项目仓库**: [GitHub Repository URL]
+*   **文档站点**: [Documentation Site URL]
+*   **社区论坛**: [Community Forum URL]
+
+---
+
+**文档维护**: 本文档随项目演进持续更新，建议定期查阅最新版本。
