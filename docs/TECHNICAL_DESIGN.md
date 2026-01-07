@@ -19,7 +19,7 @@
 | :--- | :--- | :--- |
 | **记忆胶囊 (Memory Capsule)** | 全模态摄入 (文本/图片/音频/链接)，自动生成情感化摘要与深度洞察。 | 消除碎片化信息的焦虑，将生活点滴转化为结构化、可检索的知识资产。 |
 | **数字分身 (AI Avatar)** | 基于 RAG +微调的动态人格，随记忆增加而自动进化。 | 获得一个“懂你”的镜像伴侣，提供深度的共情与思维共鸣，而非机械问答。 |
-| **思维可视化 (Mind Sphere)** | 3D 动态球体背景动画，提供沉浸式的视觉体验。当前使用演示数据，未来可接入 L1 层的 Cluster、Shade 等记忆数据，实现记忆节点的语义关系可视化。 | 增强界面的视觉吸引力，营造科技感的用户体验。 |
+| **思维可视化 (Mind Sphere)** | 3D 动态球体背景动画，提供沉浸式的视觉体验。当前使用演示数据，未来可接入真实记忆数据实现记忆节点的可视化。 | 增强界面的视觉吸引力，营造科技感的用户体验。 |
 | **专家协同 (Expert Mode)** | 支持创建自定义角色（Role），每个角色可配置专属的 System Prompt 和知识检索策略。高级对话模式使用更强的模型进行多阶段处理。 | 通过角色定制和高级对话模式，提升复杂问题的解决质量。 |
 | **自我进化 (Evolution)** | 一键触发 L2 训练循环，将近期的高频记忆内化为模型的直觉。 | 让 AI 越用越聪明，且这种“聪明”是基于用户独特经验的完全定制。 |
 
@@ -64,16 +64,13 @@ flowchart TD
 ### 3.3 前端架构 (Visual Console)
 前端被定义为可视化的"大脑控制台"，而非简单的 Chat UI。
 *   **Network Sphere**: 3D 背景动画组件，使用 Three.js 渲染动态球体网络效果。
-    *   **数据来源**: 可视化 **L1 层（身份与结构层）** 的记忆数据，包括：
-        *   `Cluster`: 语义聚类节点，展示记忆的主题聚合
-        *   `Shade`: 人格侧影节点，展示用户的兴趣领域和身份侧面
-        *   `Note`: 记忆原子节点（可选），展示具体的记忆内容
     *   **当前实现**: 使用随机生成的演示数据（40 个节点），渲染动态球体网络动画作为首页背景。
-    *   **未来规划**: 接入真实的 L1 数据，通过节点大小表示 Cluster 包含的记忆数量，通过节点颜色区分不同的 Shade，通过连接线展示 Cluster 之间的语义相似度关系。
+    *   **未来规划**: 可接入真实的 L1 Cluster、Shade 等记忆数据，实现记忆节点的语义关系可视化。
 *   **Thinking Model 配置**: 支持配置思维链模型（CoT），用于 L2 训练时的推理能力增强。
 
 ### 3.4 安全与隐私架构 (Security & Privacy)
 *   **Local-First / Offline-Capable**: 数据（向量、权重、日志）全链路本地存储，支持断网运行。
+*   **Privacy Guard**: 推理后处理层内置 PII 过滤器，防止敏感信息在展示层泄露。
 
 ---
 
@@ -211,6 +208,44 @@ graph TD
    - 使用 `ExpertSolutionStrategy` 构建 Prompt
    - 调用专家模型 (`expert_llm_service`) 生成解决方案
    - 专家模型通过 `UserLLMConfigService` 配置，通常使用更强的模型（如 GPT-4、Claude 等）
+
+   **实现流程**:
+   ```python
+   # 1. 构建 ChatRequest
+   chat_request = ChatRequest(
+       message=enhanced_requirement,  # 使用增强后的需求
+       system_prompt="",  # 由策略设置
+       temperature=temperature
+   )
+   
+   # 2. 调用 chat_service，传入 expert_llm_service.client
+   response = chat_service.chat(
+       request=chat_request,
+       strategy_chain=[BasePromptStrategy, ExpertSolutionStrategy],
+       stream=False,
+       json_response=False,
+       client=expert_llm_service.client  # 关键：使用专家模型的客户端
+   )
+   
+   # 3. chat_service 内部处理
+   # - 使用 ExpertSolutionStrategy 构建 System Prompt:
+   #   "You are an expert system designed to generate solutions..."
+   # - 使用 expert_llm_service.client 而非默认的 local_llm_service.client
+   # - expert_llm_service.client 通过 UserLLMConfigService 获取配置：
+   #   * chat_endpoint: 专家模型的 API 端点
+   #   * chat_api_key: 专家模型的 API Key
+   #   * chat_model_name: 专家模型名称（如 "gpt-4", "claude-3-opus"）
+   # - 调用 OpenAI 兼容的 API: client.chat.completions.create()
+   
+   # 4. 返回生成的解决方案
+   solution = response.choices[0].message.content
+   ```
+
+   **关键实现点**:
+   - **客户端切换**: `chat_service.chat()` 方法接受可选的 `client` 参数，当传入 `expert_llm_service.client` 时，会使用专家模型而非本地模型
+   - **配置管理**: `ExpertLLMService` 通过 `UserLLMConfigService.get_available_llm()` 获取用户配置的专家模型信息
+   - **模型参数**: 专家模型使用独立的配置（endpoint、api_key、model_name），与本地模型配置分离
+   - **Prompt 策略**: `ExpertSolutionStrategy` 构建专门的专家级 System Prompt，强调生成详细、可实施的解决方案
 
 3. **方案验证与迭代**:
    - 使用 `SolutionValidatorStrategy` 验证方案
