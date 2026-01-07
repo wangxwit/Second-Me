@@ -1,8 +1,8 @@
 # Second Me 技术架构与实现指南
 
-> **Version**: 2.0  
-> **Role**: Architect View  
-> **Status**: Living Document  
+> **Version**: 2.0
+> **Role**: Architect View
+> **Status**: Living Document
 > **Last Updated**: 2024
 
 ## 目录 (Table of Contents)
@@ -102,7 +102,9 @@ flowchart TD
 
 ## 4. LPM 智能内核详解 (LPM Kernel Design)
 
-内核模仿人类大脑的运作机制，分为三个抽象层级。
+**LPM** = **Language Personal Model**（语言个人模型），是 Second Me 的核心智能内核，负责处理用户的记忆、构建身份模型，并实现 AI 的个性化进化。
+
+内核模仿人类大脑的运作机制，分为三个抽象层级（L0、L1、L2），形成一个从短期记忆到长期记忆再到直觉反应的分层架构。
 
 ### 4.1 L0: 感官与洞察层 (Sensory & Insight)
 **隐喻**: **System RAM (Short-term Memory)**
@@ -1454,6 +1456,7 @@ except Exception as e:
 
 | 术语 | 英文 | 定义 |
 | :--- | :--- | :--- |
+| **LPM** | Language Personal Model | 语言个人模型，Second Me 的核心智能内核，负责处理记忆、构建身份模型并实现个性化进化 |
 | **L0** | Layer 0 | 感官与洞察层，负责原始数据的处理与摘要生成 |
 | **L1** | Layer 1 | 身份与结构层，负责记忆的聚类与人格侧影生成 |
 | **L2** | Layer 2 | 进化与合成层，负责将显性知识内化为模型权重 |
