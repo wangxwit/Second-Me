@@ -19,8 +19,8 @@
 | :--- | :--- | :--- |
 | **记忆胶囊 (Memory Capsule)** | 全模态摄入 (文本/图片/音频/链接)，自动生成情感化摘要与深度洞察。 | 消除碎片化信息的焦虑，将生活点滴转化为结构化、可检索的知识资产。 |
 | **数字分身 (AI Avatar)** | 基于 RAG +微调的动态人格，随记忆增加而自动进化。 | 获得一个“懂你”的镜像伴侣，提供深度的共情与思维共鸣，而非机械问答。 |
-| **思维可视化 (Mind Sphere)** | 3D 动态球体展示记忆节点的连接、激活与聚类状态。 | 将抽象的思维具象化，辅助用户发现知识盲区，激发跨领域的创意灵感。 |
-| **专家协同 (Expert Mode)** | 动态召唤不同领域的 AI 专家 (如 Python 导师、写作顾问) 进入工作流。 | "一人即团队"，通过多智能体协作显著提升复杂问题的解决效率。 |
+| **思维可视化 (Mind Sphere)** | 3D 动态球体背景动画，提供沉浸式的视觉体验。 | 增强界面的视觉吸引力，营造科技感的用户体验。 |
+| **专家协同 (Expert Mode)** | 支持创建自定义角色（Role），每个角色可配置专属的 System Prompt 和知识检索策略。高级对话模式使用更强的模型进行多阶段处理。 | 通过角色定制和高级对话模式，提升复杂问题的解决质量。 |
 | **自我进化 (Evolution)** | 一键触发 L2 训练循环，将近期的高频记忆内化为模型的直觉。 | 让 AI 越用越聪明，且这种“聪明”是基于用户独特经验的完全定制。 |
 
 ### 2.2 典型使用场景 (Use Cases)
@@ -63,97 +63,8 @@ flowchart TD
 
 ### 3.3 前端架构 (Visual Console)
 前端被定义为可视化的"大脑控制台"，而非简单的 Chat UI。
-*   **Network Sphere**: 3D 可视化组件，实时渲染记忆节点的激活路径。
-*   **Thinking Modal**: 专门的模态窗口，展示 DeepSeek R1 等模型的隐藏思维链 (CoT)。
-
-#### 3.3.1 思维可视化 (Mind Sphere) 实现详解
-
-**技术栈**:
-*   **3D 渲染引擎**: Three.js (WebGL)
-*   **组件位置**: `lpm_frontend/src/components/NetworkSphere/index.tsx`
-*   **使用场景**: 首页背景动画、未来记忆节点可视化
-
-**核心实现机制**:
-
-1. **节点生成**:
-   ```typescript
-   // 在球面上随机生成 40 个节点
-   const radius = 320;
-   const colors = ['#4ecdc4', '#ff6b6b', '#ffd93d'];
-   const sizes = [0.9, 1.0, 1.1, 1.2, 1.3];
-   
-   // 使用球面坐标系统生成均匀分布的点
-   function randomSpherePoint(radius: number): [number, number, number] {
-     const u = Math.random();
-     const v = Math.random();
-     const theta = 2 * Math.PI * u;
-     const phi = Math.acos(2 * v - 1);
-     return [
-       radius * Math.sin(phi) * Math.cos(theta),
-       radius * Math.sin(phi) * Math.sin(theta),
-       radius * Math.cos(phi)
-     ];
-   }
-   ```
-
-2. **连接算法**:
-   *   基于**距离计算**: 每个节点计算到其他所有节点的欧氏距离
-   *   **最近邻连接**: 每个节点连接最近的 1-5 个节点（随机）
-   *   **最大连接距离**: `radius * 1.5`，超出距离的节点不连接
-   *   **避免重复**: 只创建 `index > currentIndex` 的连接，防止双向连接
-
-3. **曲线连接渲染**:
-   ```typescript
-   // 使用球面线性插值 (SLERP) 创建沿球面的弧线
-   const segments = 12; // 12 段插值点
-   for (let j = 0; j <= segments; j++) {
-     const t = j / segments;
-     const interpVec = startPos.lerp(endPos, t).normalize();
-     const pointOnSphere = interpVec.multiplyScalar(radius);
-     points.push(pointOnSphere);
-   }
-   ```
-
-4. **动态效果**:
-   *   **旋转动画**: 场景以 `rotationSpeed = 0.0005` 的速度持续旋转
-   *   **透明度渐变**: 连接线的透明度根据距离动态调整 (`opacity = 0.25 ~ 0.45`)
-   *   **淡入效果**: 组件初始化后通过 CSS transition 实现淡入
-
-5. **当前状态**:
-   *   ✅ **已实现**: 基础 3D 球体渲染、节点连接、旋转动画
-   *   ⚠️ **待完善**: 
-     *   目前使用**随机生成的演示数据**，尚未连接真实的记忆数据
-     *   需要集成 L1 Cluster 数据 (`/api/kernel/l1/global/version/<version>`)
-     *   需要根据记忆节点的语义相似度动态调整连接权重
-
-**未来集成计划**:
-
-1. **数据源对接**:
-   ```typescript
-   // 从 API 获取 L1 Cluster 数据
-   GET /api/kernel/l1/global/version/<version>
-   // 返回: clusters[], shades[], chunk_topics[]
-   
-   // 将 Cluster 映射为可视化节点
-   clusters.forEach(cluster => {
-     const node = {
-       id: cluster.cluster_id,
-       position: cluster.cluster_center, // 使用聚类中心作为位置
-       size: cluster.memory_ids.length,   // 节点大小 = 记忆数量
-       color: getShadeColor(cluster.shade_id) // 根据 Shade 分配颜色
-     };
-   });
-   ```
-
-2. **激活路径可视化**:
-   *   当用户查询时，高亮相关的记忆节点
-   *   显示从查询到检索结果的激活路径
-   *   使用粒子效果或高亮动画展示信息流动
-
-3. **交互功能**:
-   *   鼠标悬停显示节点详情（Shade 名称、记忆数量）
-   *   点击节点跳转到对应的记忆列表
-   *   支持缩放、旋转、拖拽操作
+*   **Network Sphere**: 3D 背景动画组件，使用 Three.js 渲染动态球体网络效果。
+*   **Thinking Model 配置**: 支持配置思维链模型（CoT），用于 L2 训练时的推理能力增强。
 
 ### 3.4 安全与隐私架构 (Security & Privacy)
 *   **Local-First / Offline-Capable**: 数据（向量、权重、日志）全链路本地存储，支持断网运行。
@@ -959,13 +870,10 @@ except Exception as e:
 
 ### 17.2 隐私保护
 
-**PII 过滤** (规划中):
-*   推理后处理层过滤敏感信息
-*   支持自定义隐私规则
-
 **本地优先**:
 *   所有数据本地存储
 *   支持完全离线运行
+*   数据不离开本地环境
 
 ---
 
@@ -991,29 +899,7 @@ except Exception as e:
 **向量数据库抽象** (`common/repository/vector_repository.py`):
 *   `BaseVectorRepository` 抽象基类
 *   当前实现: `ChromaRepository`
-*   支持扩展其他向量数据库 (如 Milvus、Pinecone)
-
----
-
-## 19. 未来规划 (Roadmap)
-
-### 19.1 短期目标
-
-*   **GraphRAG 集成**: 增强 L1 层的关系图谱能力
-*   **DPO 训练支持**: 完善 L2 层的偏好对齐训练
-*   **WebSocket 支持**: 替代 SSE 实现双向通信
-
-### 19.2 中期目标
-
-*   **分布式训练**: 支持多机分布式 L2 训练
-*   **模型市场**: 共享与交易训练好的 L2 模型
-*   **移动端支持**: React Native 移动应用
-
-### 19.3 长期愿景
-
-*   **联邦学习**: 跨实例的知识共享与协作
-*   **多模态 L2**: 支持图像、音频的 L2 训练
-*   **实时同步**: 多设备间的实时记忆同步
+*   架构设计支持扩展其他向量数据库实现
 
 ---
 
