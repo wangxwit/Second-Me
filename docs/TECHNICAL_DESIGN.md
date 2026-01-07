@@ -150,6 +150,94 @@ AI 产生“自我意识”的关键算法：
 2.  **L2 通道 (Vibe)**: 身份加载 "How/Why" (语气、态度)。
 3.  **Synthesis**: 在 Prompt 中融合事实与人格。
 
+### 5.5 专家协同机制 (Expert Mode)
+
+专家协同功能包含两个核心组件：**角色系统 (Role System)** 和 **高级对话模式 (Advanced Chat Mode)**。
+
+#### 5.5.1 角色系统 (Role System)
+
+**数据模型**:
+```python
+class Role:
+    uuid: str              # 角色唯一标识
+    name: str              # 角色名称（如 "Python 导师"）
+    description: str       # 角色描述
+    system_prompt: str     # 专属的 System Prompt
+    icon: str             # 角色图标
+    enable_l0_retrieval: bool  # 是否启用 L0 知识检索
+    enable_l1_retrieval: bool  # 是否启用 L1 知识检索
+```
+
+**实现机制**:
+1. **角色创建**: 通过 `POST /api/kernel2/roles` 创建角色，存储到数据库 `roles` 表。
+2. **角色应用**: 在对话请求的 `metadata.role_id` 中指定角色 UUID。
+3. **Prompt 构建**: `RoleBasedStrategy` 根据 `role_id` 加载对应的 `system_prompt`，替换默认的 System Prompt。
+4. **知识检索控制**: 根据角色的 `enable_l0_retrieval` 和 `enable_l1_retrieval` 配置，动态启用/禁用知识检索。
+
+**策略链 (Strategy Chain)**:
+```python
+# 默认策略链
+[BasePromptStrategy, RoleBasedStrategy, KnowledgeEnhancedStrategy]
+
+# RoleBasedStrategy 工作流程
+if role_id in metadata:
+    role = role_service.get_role_by_uuid(role_id)
+    system_prompt = role.system_prompt  # 使用角色的专属 Prompt
+    enable_l0 = role.enable_l0_retrieval
+    enable_l1 = role.enable_l1_retrieval
+```
+
+#### 5.5.2 高级对话模式 (Advanced Chat Mode)
+
+**多阶段处理流程**:
+```mermaid
+graph TD
+    Start["用户需求"] --> Enhance["阶段1: Requirement Enhancement<br/>需求增强与澄清"]
+    Enhance --> Expert["阶段2: Expert Solution<br/>专家模型生成方案"]
+    Expert --> Validate{"阶段3: Validator<br/>方案验证"}
+    Validate -->|无效| Feedback["Critic Feedback"]
+    Feedback --> Expert
+    Validate -->|有效| Format["阶段4: Solution Formatter<br/>格式化输出"]
+    Format --> Response["最终响应"]
+```
+
+**实现细节**:
+1. **需求增强阶段**: 
+   - 使用 `RequirementEnhancementStrategy` 构建 Prompt
+   - 调用本地模型 (`local_llm_service`) 进行需求澄清
+   - 集成 L0/L1 知识检索结果
+
+2. **专家方案生成**:
+   - 使用 `ExpertSolutionStrategy` 构建 Prompt
+   - 调用专家模型 (`expert_llm_service`) 生成解决方案
+   - 专家模型通过 `UserLLMConfigService` 配置，通常使用更强的模型（如 GPT-4、Claude 等）
+
+3. **方案验证与迭代**:
+   - 使用 `SolutionValidatorStrategy` 验证方案
+   - 返回 JSON 格式：`{"is_valid": bool, "feedback": str}`
+   - 如果无效，根据反馈重新生成（最多 `max_iterations` 次）
+
+4. **最终格式化**:
+   - 使用 `SolutionFormatterStrategy` 格式化输出
+   - 提升可读性和结构
+
+**API 端点**:
+```python
+POST /api/talk/advanced_chat
+{
+    "requirement": "用户需求描述",
+    "max_iterations": 3,  # 最大迭代次数
+    "temperature": 0.01,
+    "enable_l0_retrieval": true,
+    "enable_l1_retrieval": true
+}
+```
+
+**专家模型配置**:
+- 通过 `UserLLMConfigService` 管理专家模型配置
+- 支持配置独立的 `chat_endpoint`、`chat_api_key`、`chat_model_name`
+- `ExpertLLMService` 封装专家模型的调用逻辑
+
 ---
 
 ## 6. 在线推理服务架构 (Online Inference Service)
