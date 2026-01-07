@@ -252,6 +252,92 @@ graph TD
    - 返回 JSON 格式：`{"is_valid": bool, "feedback": str}`
    - 如果无效，根据反馈重新生成（最多 `max_iterations` 次）
 
+   **验证实现流程**:
+   ```python
+   # 1. 构建验证请求，包含原始需求和生成的方案
+   chat_request = ChatRequest(
+       message=f"""
+       Requirement:
+       {requirement}
+       
+       Solution:
+       {solution}
+       """,
+       system_prompt="",  # 由 SolutionValidatorStrategy 设置
+       temperature=0.2  # 较低温度保证验证结果的一致性
+   )
+   
+   # 2. 调用 chat_service，使用 SolutionValidatorStrategy
+   response = chat_service.chat(
+       request=chat_request,
+       strategy_chain=[BasePromptStrategy, SolutionValidatorStrategy],
+       stream=False,
+       json_response=False  # 注意：这里不使用 json_response=True
+       # 因为 LLM 可能返回带格式的 JSON，需要手动解析
+   )
+   
+   # 3. SolutionValidatorStrategy 构建的 System Prompt:
+   """
+   You are a solution validator. Your task is to validate if the given 
+   solution meets all requirements.
+   You must return a JSON response in the following format:
+   {
+       "is_valid": boolean,
+       "feedback": string  // Reason and improvement suggestions if invalid
+   }
+   """
+   
+   # 4. 解析验证结果
+   validation_text = response.choices[0].message.content
+   try:
+       validation_dict = json.loads(validation_text)
+       validation_result = ValidationResult(
+           is_valid=validation_dict["is_valid"],
+           feedback=validation_dict.get("feedback")
+       )
+   except json.JSONDecodeError:
+       # 如果解析失败，默认返回无效
+       validation_result = ValidationResult(
+           is_valid=False,
+           feedback="Failed to validate solution"
+       )
+   ```
+
+   **迭代优化流程**:
+   ```python
+   validation_history = []
+   current_solution = initial_solution
+   
+   for iteration in range(max_iterations):  # 默认最多 3 次迭代
+       # 验证当前方案
+       validation_result = validate_solution(requirement, current_solution)
+       validation_history.append(validation_result)
+       
+       if validation_result.is_valid:
+           # 验证通过，进行格式化并退出循环
+           final_format = format_solution(current_solution)
+           break
+       elif iteration < max_iterations - 1:
+           # 验证未通过，根据反馈重新生成
+           improved_requirement = f"""
+           {requirement}
+           
+           Previous attempt feedback: {validation_result.feedback}
+           """
+           current_solution = generate_solution(
+               improved_requirement, 
+               temperature
+           )
+   ```
+
+   **关键实现点**:
+   - **验证 Prompt**: `SolutionValidatorStrategy` 构建专门的验证 Prompt，要求 LLM 以 JSON 格式返回验证结果
+   - **温度控制**: 验证阶段使用较低温度 (0.2)，确保验证结果的一致性
+   - **JSON 解析**: 手动解析 LLM 返回的 JSON，处理可能的格式问题
+   - **迭代机制**: 如果验证失败，将反馈信息添加到需求中，重新调用专家模型生成改进方案
+   - **历史记录**: 保存每次验证的结果到 `validation_history`，便于追踪优化过程
+   - **退出条件**: 验证通过或达到最大迭代次数时退出循环
+
 4. **最终格式化**:
    - 使用 `SolutionFormatterStrategy` 格式化输出
    - 提升可读性和结构
