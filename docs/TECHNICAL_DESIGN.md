@@ -202,6 +202,8 @@ you embody a warm, empathetic, and humorously intelligent personality...
 **训练阶段集成**:
 ```python
 # L2 训练时，如果启用 CoT (is_cot=True)
+# CoT = Chain of Thought（思维链），是一种让 AI 展示推理过程的技术
+# 通过要求模型输出思考步骤，提升推理质量和可解释性
 # 使用 MEMORY_COT_PROMPT 生成训练数据
 
 MEMORY_COT_PROMPT = """
@@ -1252,6 +1254,7 @@ except Exception as e:
 | **Space** | Space | 多智能体协作空间，支持多个 Second Me 实例参与讨论 |
 | **MCP** | Model Context Protocol | 模型上下文协议，用于 LLM 与工具/环境的交互 |
 | **LoRA** | Low-Rank Adaptation | 低秩适应，高效的模型微调技术 |
+| **CoT** | Chain of Thought | 思维链，一种让 AI 展示推理过程的技术，通过要求模型输出思考步骤来提升推理质量和可解释性 |
 
 ---
 
