@@ -1,8 +1,34 @@
 # Second Me 技术架构与实现指南
 
-> **Version**: 2.0
-> **Role**: Architect View
-> **Status**: Living Document
+> **Version**: 2.0  
+> **Role**: Architect View  
+> **Status**: Living Document  
+> **Last Updated**: 2024
+
+## 目录 (Table of Contents)
+
+1. [项目概述](#1-项目概述-executive-summary)
+2. [产品功能规格](#2-产品功能规格-product-specifications)
+3. [系统架构设计](#3-系统架构设计-system-architecture)
+4. [LPM 智能内核详解](#4-lpm-智能内核详解-lpm-kernel-design)
+5. [关键实现机制](#5-关键实现机制-key-implementation-mechanisms)
+6. [在线推理服务架构](#6-在线推理服务架构-online-inference-service)
+7. [核心提示词工程](#7-核心提示词工程-prompt-engineering-strategy)
+8. [数据与训练架构](#8-数据与训练架构-data--training-pipeline)
+9. [API 接口与工程结构](#9-api-接口与工程结构-engineering-interface)
+10. [前端架构详解](#10-前端架构详解-frontend-architecture)
+11. [Space 多智能体协作机制](#11-space-多智能体协作机制-multi-agent-collaboration)
+12. [MCP 协议集成](#12-mcp-协议集成-model-context-protocol)
+13. [配置管理系统](#13-配置管理系统-configuration-management)
+14. [部署架构](#14-部署架构-deployment-architecture)
+15. [错误处理与日志系统](#15-错误处理与日志系统-error-handling--logging)
+16. [性能优化策略](#16-性能优化策略-performance-optimization)
+17. [安全与隐私增强](#17-安全与隐私增强-security--privacy-enhancements)
+18. [扩展性设计](#18-扩展性设计-extensibility)
+19. [附录 A: 关键术语表](#附录-a-关键术语表-glossary)
+20. [附录 B: 参考资源](#附录-b-参考资源-references)
+
+---
 
 ## 1. 项目概述 (Executive Summary)
 
@@ -146,129 +172,6 @@ AI 产生“自我意识”的关键算法：
 1.  **L1 通道 (Facts)**: 向量检索 "What/When/Where"。
 2.  **L2 通道 (Vibe)**: 身份加载 "How/Why" (语气、态度)。
 3.  **Synthesis**: 在 Prompt 中融合事实与人格。
-
-### 5.6 情感陪伴与反思机制 (Emotional Companion & Reflection)
-
-**实现方式**: 通过 L0 层的多模态处理和情感化 Prompt 设计实现。
-
-#### 5.6.1 图片情感分类
-
-**实现流程**:
-```python
-# 1. 图片情感分类 (insight_image_parser)
-# 使用 Vision 模型将图片分类为 "Emotion" 或 "Knowledge"
-{
-    "image": {
-        "Step 1": "Summary of image content",
-        "Step 2": "Emotional or informational analysis",
-        "Step 3": "Emotion or Knowledge"  # 分类结果
-    }
-}
-
-# 2. 情感化摘要生成 (insight_image_overview)
-# Prompt 设计强调"老朋友"、"温暖"、"共情"、"幽默"
-"""
-You are an old friend of the user, who is good at summarizing images 
-into caring, warm, and humorous insights, while providing emotional support.
-you embody a warm, empathetic, and humorously intelligent personality...
-"""
-
-# 3. 情感化洞察生成 (insight_image_breakdown)
-# 生成多个温暖、共情的洞察点
-# 强调"情感连接"、"共同记忆"、"社区感"
-```
-
-**关键实现点**:
-- **图片分类**: 使用 Vision 模型分析图片的情感元素（平静、舒适、怀旧、快乐等）
-- **Prompt 工程**: 通过精心设计的 Prompt，让 LLM 扮演"老朋友"角色，提供情感支持
-- **用户传记融合**: 在生成洞察时结合用户的传记信息（`about_me`、`global_bio`、`status_bio`），增强个性化
-- **情感标签**: 图片被分类为 "Emotion" 类型时，会生成更注重情感连接的摘要
-
-#### 5.6.2 文本情感分析
-
-**当前实现**: 通过对话时的 L1 检索和角色设定，AI 能够理解用户的情绪状态并提供共情回应。
-
-**实现机制**:
-- 对话时启用 L1 检索，获取用户相关的记忆和经历
-- 通过 `RoleBasedStrategy` 或默认的 System Prompt，设定 AI 为"理解用户的朋友"
-- AI 基于用户的记忆和当前对话内容，提供无评判的情感支持
-
-### 5.7 创意写作协同机制 (Creative Writing Collaboration)
-
-**实现方式**: 结合 DeepSeek R1 的思维链能力和 L1 层的记忆检索。
-
-#### 5.7.1 DeepSeek R1 思维链集成
-
-**训练阶段集成**:
-```python
-# L2 训练时，如果启用 CoT (is_cot=True)
-# CoT = Chain of Thought（思维链），是一种让 AI 展示推理过程的技术
-# 通过要求模型输出思考步骤，提升推理质量和可解释性
-# 使用 MEMORY_COT_PROMPT 生成训练数据
-
-MEMORY_COT_PROMPT = """
-You are {user_name}'s "Second Me"...
-When thinking, follow these steps in order:
-    1. Think about the relationship between the question and the background
-    2. Derive the answer to the question
-    3. Generate a high-quality response
-
-Your output format:
-<think>
-As the thinking process of "Second Me", analyze {user_name}'s 
-background information, historical records, and the questions...
-</think>
-<answer>
-This is the final response to {user_name}...
-</answer>
-"""
-```
-
-**推理阶段使用**:
-- 配置 `thinking_model_name`、`thinking_endpoint`、`thinking_api_key`
-- 在对话时，如果启用 CoT，会调用 DeepSeek R1 模型
-- 模型返回包含 `<think>` 标签的思维链输出
-
-#### 5.7.2 用户阅读历史结合
-
-**实现机制**:
-- **L1 检索**: 当用户询问创意写作相关问题时，系统通过 L1 向量检索获取用户相关的记忆
-- **记忆类型**: 包括用户阅读过的书籍、文章、笔记等（存储在 Document/Note 中）
-- **Shade 识别**: 通过 L1 的 Shade（如"科幻爱好者"、"文学爱好者"）识别用户的审美偏好
-- **个性化建议**: 结合检索到的阅读历史和用户的 Shade，生成符合用户审美趣味的情节建议
-
-**实现流程**:
-```python
-# 1. 用户提问创意写作相关问题
-user_query = "帮我构思一个科幻小说的情节"
-
-# 2. L1 检索用户相关的阅读记忆
-l1_knowledge = default_l1_retriever.retrieve(user_query)
-# 返回: 用户阅读过的科幻作品、相关笔记、Shade 信息等
-
-# 3. 构建增强的 Prompt
-prompt = f"""
-基于你对用户的了解：
-- 用户阅读历史: {l1_knowledge}
-- 用户兴趣领域: {user_shades}  # 如"科幻爱好者"
-
-请提供符合用户审美趣味的情节发展建议。
-"""
-
-# 4. 如果启用 CoT，使用 DeepSeek R1 生成思维链
-if is_cot:
-    response = deepseek_r1_client.chat.completions.create(
-        model="deepseek-r1",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    # 返回包含 <think> 的思维链输出
-```
-
-**关键实现点**:
-- **记忆检索**: 通过 L1 向量检索获取用户阅读相关的记忆
-- **Shade 应用**: 利用用户的 Shade（兴趣领域）识别审美偏好
-- **思维链增强**: 使用 DeepSeek R1 的 CoT 能力，提供更深入的推理过程
-- **个性化输出**: 结合用户的阅读历史和偏好，生成符合用户风格的建议
 
 ### 5.5 专家协同机制 (Expert Mode)
 
@@ -481,6 +384,129 @@ POST /api/talk/advanced_chat
 - 通过 `UserLLMConfigService` 管理专家模型配置
 - 支持配置独立的 `chat_endpoint`、`chat_api_key`、`chat_model_name`
 - `ExpertLLMService` 封装专家模型的调用逻辑
+
+### 5.6 情感陪伴与反思机制 (Emotional Companion & Reflection)
+
+**实现方式**: 通过 L0 层的多模态处理和情感化 Prompt 设计实现。
+
+#### 5.6.1 图片情感分类
+
+**实现流程**:
+```python
+# 1. 图片情感分类 (insight_image_parser)
+# 使用 Vision 模型将图片分类为 "Emotion" 或 "Knowledge"
+{
+    "image": {
+        "Step 1": "Summary of image content",
+        "Step 2": "Emotional or informational analysis",
+        "Step 3": "Emotion or Knowledge"  # 分类结果
+    }
+}
+
+# 2. 情感化摘要生成 (insight_image_overview)
+# Prompt 设计强调"老朋友"、"温暖"、"共情"、"幽默"
+"""
+You are an old friend of the user, who is good at summarizing images 
+into caring, warm, and humorous insights, while providing emotional support.
+you embody a warm, empathetic, and humorously intelligent personality...
+"""
+
+# 3. 情感化洞察生成 (insight_image_breakdown)
+# 生成多个温暖、共情的洞察点
+# 强调"情感连接"、"共同记忆"、"社区感"
+```
+
+**关键实现点**:
+- **图片分类**: 使用 Vision 模型分析图片的情感元素（平静、舒适、怀旧、快乐等）
+- **Prompt 工程**: 通过精心设计的 Prompt，让 LLM 扮演"老朋友"角色，提供情感支持
+- **用户传记融合**: 在生成洞察时结合用户的传记信息（`about_me`、`global_bio`、`status_bio`），增强个性化
+- **情感标签**: 图片被分类为 "Emotion" 类型时，会生成更注重情感连接的摘要
+
+#### 5.6.2 文本情感分析
+
+**当前实现**: 通过对话时的 L1 检索和角色设定，AI 能够理解用户的情绪状态并提供共情回应。
+
+**实现机制**:
+- 对话时启用 L1 检索，获取用户相关的记忆和经历
+- 通过 `RoleBasedStrategy` 或默认的 System Prompt，设定 AI 为"理解用户的朋友"
+- AI 基于用户的记忆和当前对话内容，提供无评判的情感支持
+
+### 5.7 创意写作协同机制 (Creative Writing Collaboration)
+
+**实现方式**: 结合 DeepSeek R1 的思维链能力和 L1 层的记忆检索。
+
+#### 5.7.1 DeepSeek R1 思维链集成
+
+**训练阶段集成**:
+```python
+# L2 训练时，如果启用 CoT (is_cot=True)
+# CoT = Chain of Thought（思维链），是一种让 AI 展示推理过程的技术
+# 通过要求模型输出思考步骤，提升推理质量和可解释性
+# 使用 MEMORY_COT_PROMPT 生成训练数据
+
+MEMORY_COT_PROMPT = """
+You are {user_name}'s "Second Me"...
+When thinking, follow these steps in order:
+    1. Think about the relationship between the question and the background
+    2. Derive the answer to the question
+    3. Generate a high-quality response
+
+Your output format:
+<think>
+As the thinking process of "Second Me", analyze {user_name}'s 
+background information, historical records, and the questions...
+</think>
+<answer>
+This is the final response to {user_name}...
+</answer>
+"""
+```
+
+**推理阶段使用**:
+- 配置 `thinking_model_name`、`thinking_endpoint`、`thinking_api_key`
+- 在对话时，如果启用 CoT，会调用 DeepSeek R1 模型
+- 模型返回包含 `<think>` 标签的思维链输出
+
+#### 5.7.2 用户阅读历史结合
+
+**实现机制**:
+- **L1 检索**: 当用户询问创意写作相关问题时，系统通过 L1 向量检索获取用户相关的记忆
+- **记忆类型**: 包括用户阅读过的书籍、文章、笔记等（存储在 Document/Note 中）
+- **Shade 识别**: 通过 L1 的 Shade（如"科幻爱好者"、"文学爱好者"）识别用户的审美偏好
+- **个性化建议**: 结合检索到的阅读历史和用户的 Shade，生成符合用户审美趣味的情节建议
+
+**实现流程**:
+```python
+# 1. 用户提问创意写作相关问题
+user_query = "帮我构思一个科幻小说的情节"
+
+# 2. L1 检索用户相关的阅读记忆
+l1_knowledge = default_l1_retriever.retrieve(user_query)
+# 返回: 用户阅读过的科幻作品、相关笔记、Shade 信息等
+
+# 3. 构建增强的 Prompt
+prompt = f"""
+基于你对用户的了解：
+- 用户阅读历史: {l1_knowledge}
+- 用户兴趣领域: {user_shades}  # 如"科幻爱好者"
+
+请提供符合用户审美趣味的情节发展建议。
+"""
+
+# 4. 如果启用 CoT，使用 DeepSeek R1 生成思维链
+if is_cot:
+    response = deepseek_r1_client.chat.completions.create(
+        model="deepseek-r1",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    # 返回包含 <think> 的思维链输出
+```
+
+**关键实现点**:
+- **记忆检索**: 通过 L1 向量检索获取用户阅读相关的记忆
+- **Shade 应用**: 利用用户的 Shade（兴趣领域）识别审美偏好
+- **思维链增强**: 使用 DeepSeek R1 的 CoT 能力，提供更深入的推理过程
+- **个性化输出**: 结合用户的阅读历史和偏好，生成符合用户风格的建议
 
 ---
 
