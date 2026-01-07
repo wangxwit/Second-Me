@@ -591,16 +591,50 @@ flowchart LR
 
 ## 8. 数据与训练架构 (Data & Training Pipeline)
 
-### 8.1 数据模型 (Data Scehma)
-*   **Note**: 基础原子 (Embedding + Content)。
-*   **Cluster**: 语义聚合体。
-*   **Shade**: 人格侧影 (Me-Aligned)。
-*   **Bio**: 完整人格状态。
+### 8.1 数据模型 (Data Schema)
+
+L2 训练使用的数据来自 L1 层的结构化记忆，形成一个层次化的数据金字塔：
+
+*   **Note**: 基础原子单元
+    - **内容**: 原始记忆内容（文本、图片、音频等）
+    - **嵌入**: 向量表示（Embedding），用于语义检索
+    - **作用**: 训练数据的最小单元，包含用户的具体记忆片段
+
+*   **Cluster**: 语义聚合体
+    - **内容**: 多个相关 Note 的语义聚类
+    - **作用**: 将相似主题的记忆组织在一起，形成训练数据的主题单元
+    - **示例**: "Python 学习笔记"、"旅行回忆"、"工作项目"
+
+*   **Shade**: 人格侧影 (Me-Aligned)
+    - **内容**: 用户的某个兴趣领域或身份侧面
+    - **特点**: 经过 Me-Alignment 算法处理，从第三人称转换为第一人称视角
+    - **作用**: 代表用户的某个"人格维度"，用于生成个性化的训练数据
+    - **示例**: "Python 专家"、"科幻爱好者"、"旅行达人"
+
+*   **Bio**: 完整人格状态
+    - **内容**: 用户的全局传记，包含所有 Shade 的综合
+    - **作用**: 提供用户完整的身份背景，用于生成符合用户整体风格的训练数据
+
+**数据流转关系**:
+```
+Note (原始记忆) 
+  ↓ 聚类
+Cluster (主题聚合)
+  ↓ 提取
+Shade (人格侧影)
+  ↓ 整合
+Bio (完整人格)
+  ↓ 生成
+训练数据 (QA 对、偏好数据等)
+```
 
 ### 8.2 训练状态机 (Training FSM)
+
+L2 训练是一个多阶段的状态机流程，确保内存高效利用和训练稳定性：
+
 ```mermaid
 stateDiagram-v2
-    [*] --> DataSynthesis: 触发
+    [*] --> DataSynthesis: 触发训练
     DataSynthesis --> ReleaseVRAM: 合成 QA 对 & 释放推理显存
     ReleaseVRAM --> LoadModel: 加载 Base Model (4bit/8bit)
     
@@ -615,6 +649,156 @@ stateDiagram-v2
     Training --> MergeAdapter: 合并权重
     MergeAdapter --> Reload: 重载推理服务
     Reload --> [*]: 就绪
+```
+
+#### 8.2.1 状态详解
+
+**1. DataSynthesis (数据合成阶段)**
+- **目的**: 基于 L1 层的记忆数据（Note、Cluster、Shade、Bio）生成训练数据
+- **生成的数据类型**:
+  - **SelfQA**: 自我问答对，基于用户的记忆生成问答
+  - **Preference**: 偏好数据，基于用户的 Shade 生成偏好表达
+  - **Diversity**: 多样性数据，基于 Cluster 生成多样化的问答对
+- **实现**: 使用 LLM（如 GPT-4、DeepSeek R1）调用 API 生成合成数据
+- **输出**: JSON 格式的训练数据文件（`merged.json`）
+
+**2. ReleaseVRAM (释放显存)**
+- **目的**: 释放推理阶段占用的显存，为训练阶段腾出空间
+- **操作**:
+  - 卸载推理模型（如 Ollama 模型）
+  - 清理 GPU 缓存
+  - 释放推理服务占用的内存
+- **原因**: 推理和训练都需要大量显存，需要错开使用
+
+**3. LoadModel (加载基础模型)**
+- **目的**: 加载预训练的基础模型，准备进行微调
+- **量化策略**:
+  - **4bit 量化**: 使用 BitsAndBytesConfig，大幅减少显存占用
+  - **8bit 量化**: 平衡显存和性能
+  - **全精度**: 如果显存充足，可以使用全精度训练
+- **实现**: 使用 `transformers` 库加载模型，配置量化参数
+
+**4. Training (训练阶段)**
+
+这是一个嵌套的状态机，包含多个子状态：
+
+*   **PrepareLoRA (配置 LoRA Adapters)**
+    - **目的**: 配置 LoRA（Low-Rank Adaptation）参数
+    - **LoRA 配置**:
+      ```python
+      LoraConfig(
+          r=8,                    # LoRA 的秩（rank）
+          lora_alpha=16,          # LoRA 的缩放因子
+          lora_dropout=0.1,       # Dropout 率
+          target_modules="all-linear",  # 目标模块（所有线性层）
+      )
+      ```
+    - **优势**: LoRA 只训练少量参数（通常 < 1%），大幅减少显存和计算需求
+
+*   **Loop (Epoch 循环)**
+    - **目的**: 执行多轮训练（Epoch）
+    - **流程**:
+      1. 加载训练数据批次（Batch）
+      2. 前向传播（Forward Pass）
+      3. 计算损失（Loss）
+      4. 反向传播（Backward Pass）
+      5. 更新 LoRA 权重
+    - **优化技术**:
+      - Gradient Checkpointing: 减少显存占用
+      - Gradient Accumulation: 模拟更大的批次大小
+      - Mixed Precision Training: 使用 bfloat16 加速训练
+
+*   **Checkpoint (保存检查点)**
+    - **目的**: 定期保存训练中间状态，防止训练中断导致的数据丢失
+    - **保存内容**:
+      - LoRA Adapter 权重
+      - 优化器状态
+      - 训练步数（Step）和轮数（Epoch）
+    - **策略**: 根据 `save_steps` 和 `save_total_limit` 配置保存频率和数量
+
+**5. MergeAdapter (合并权重)**
+- **目的**: 将训练好的 LoRA Adapter 权重合并到基础模型中
+- **操作**:
+  ```python
+  # 加载基础模型和 LoRA Adapter
+  base_model = AutoModelForCausalLM.from_pretrained(base_model_path)
+  adapter_model = PeftModel.from_pretrained(base_model, adapter_path)
+  
+  # 合并权重
+  merged_model = adapter_model.merge_and_unload()
+  
+  # 保存合并后的模型
+  merged_model.save_pretrained(output_path)
+  ```
+- **结果**: 生成一个完整的、可以直接使用的模型文件
+
+**6. Reload (重载推理服务)**
+- **目的**: 将训练好的模型加载到推理服务中，替换旧模型
+- **操作**:
+  - 停止旧的推理服务
+  - 加载新模型（通常是 GGUF 格式，用于 llama.cpp）
+  - 启动新的推理服务
+- **结果**: 用户可以使用新训练的模型进行对话
+
+#### 8.2.2 内存管理策略
+
+训练过程中采用多种内存优化策略：
+
+1. **显存释放**: 在数据合成完成后立即释放推理模型
+2. **量化加载**: 使用 4bit/8bit 量化减少模型显存占用
+3. **梯度检查点**: 用计算时间换取显存空间
+4. **优化器状态卸载**: 将优化器状态卸载到 CPU（低显存 GPU）
+5. **批次大小调整**: 根据可用显存动态调整批次大小
+
+#### 8.2.3 训练数据生成示例
+
+```python
+# 基于用户的 Shade "Python 专家" 生成训练数据
+shade = {
+    "name": "Python 专家",
+    "description": "擅长 Python 开发和数据分析",
+    "clusters": [...],  # 相关的 Cluster
+    "notes": [...]      # 相关的 Note
+}
+
+# 生成 SelfQA 数据
+selfqa_data = generate_selfqa(
+    shade=shade,
+    user_name="用户",
+    global_bio="..."
+)
+# 输出: {"user": "如何优化 Python 代码性能？", "assistant": "基于你的经验..."}
+
+# 生成 Preference 数据
+preference_data = generate_preference(
+    shade=shade,
+    user_name="用户"
+)
+# 输出: {"preferred": "使用列表推导式", "rejected": "使用 for 循环"}
+```
+
+#### 8.2.4 完整训练流程示例
+
+```bash
+# 1. 触发训练（通过 API 或脚本）
+POST /api/trainprocess/start
+{
+    "data_synthesis_mode": "medium",
+    "num_train_epochs": 3,
+    "learning_rate": 2e-4
+}
+
+# 2. 系统自动执行：
+# - 数据合成（生成 merged.json）
+# - 释放显存
+# - 加载模型（4bit 量化）
+# - 配置 LoRA
+# - 执行训练（3 个 Epoch）
+# - 保存检查点（每 5 步）
+# - 合并权重
+# - 重载推理服务
+
+# 3. 训练完成后，新模型自动生效
 ```
 
 ---
