@@ -62,9 +62,98 @@ flowchart TD
     *   **协议**: Model Context Protocol (MCP) 实现工具与环境交互。
 
 ### 3.3 前端架构 (Visual Console)
-前端被定义为可视化的“大脑控制台”，而非简单的 Chat UI。
+前端被定义为可视化的"大脑控制台"，而非简单的 Chat UI。
 *   **Network Sphere**: 3D 可视化组件，实时渲染记忆节点的激活路径。
 *   **Thinking Modal**: 专门的模态窗口，展示 DeepSeek R1 等模型的隐藏思维链 (CoT)。
+
+#### 3.3.1 思维可视化 (Mind Sphere) 实现详解
+
+**技术栈**:
+*   **3D 渲染引擎**: Three.js (WebGL)
+*   **组件位置**: `lpm_frontend/src/components/NetworkSphere/index.tsx`
+*   **使用场景**: 首页背景动画、未来记忆节点可视化
+
+**核心实现机制**:
+
+1. **节点生成**:
+   ```typescript
+   // 在球面上随机生成 40 个节点
+   const radius = 320;
+   const colors = ['#4ecdc4', '#ff6b6b', '#ffd93d'];
+   const sizes = [0.9, 1.0, 1.1, 1.2, 1.3];
+   
+   // 使用球面坐标系统生成均匀分布的点
+   function randomSpherePoint(radius: number): [number, number, number] {
+     const u = Math.random();
+     const v = Math.random();
+     const theta = 2 * Math.PI * u;
+     const phi = Math.acos(2 * v - 1);
+     return [
+       radius * Math.sin(phi) * Math.cos(theta),
+       radius * Math.sin(phi) * Math.sin(theta),
+       radius * Math.cos(phi)
+     ];
+   }
+   ```
+
+2. **连接算法**:
+   *   基于**距离计算**: 每个节点计算到其他所有节点的欧氏距离
+   *   **最近邻连接**: 每个节点连接最近的 1-5 个节点（随机）
+   *   **最大连接距离**: `radius * 1.5`，超出距离的节点不连接
+   *   **避免重复**: 只创建 `index > currentIndex` 的连接，防止双向连接
+
+3. **曲线连接渲染**:
+   ```typescript
+   // 使用球面线性插值 (SLERP) 创建沿球面的弧线
+   const segments = 12; // 12 段插值点
+   for (let j = 0; j <= segments; j++) {
+     const t = j / segments;
+     const interpVec = startPos.lerp(endPos, t).normalize();
+     const pointOnSphere = interpVec.multiplyScalar(radius);
+     points.push(pointOnSphere);
+   }
+   ```
+
+4. **动态效果**:
+   *   **旋转动画**: 场景以 `rotationSpeed = 0.0005` 的速度持续旋转
+   *   **透明度渐变**: 连接线的透明度根据距离动态调整 (`opacity = 0.25 ~ 0.45`)
+   *   **淡入效果**: 组件初始化后通过 CSS transition 实现淡入
+
+5. **当前状态**:
+   *   ✅ **已实现**: 基础 3D 球体渲染、节点连接、旋转动画
+   *   ⚠️ **待完善**: 
+     *   目前使用**随机生成的演示数据**，尚未连接真实的记忆数据
+     *   需要集成 L1 Cluster 数据 (`/api/kernel/l1/global/version/<version>`)
+     *   需要根据记忆节点的语义相似度动态调整连接权重
+
+**未来集成计划**:
+
+1. **数据源对接**:
+   ```typescript
+   // 从 API 获取 L1 Cluster 数据
+   GET /api/kernel/l1/global/version/<version>
+   // 返回: clusters[], shades[], chunk_topics[]
+   
+   // 将 Cluster 映射为可视化节点
+   clusters.forEach(cluster => {
+     const node = {
+       id: cluster.cluster_id,
+       position: cluster.cluster_center, // 使用聚类中心作为位置
+       size: cluster.memory_ids.length,   // 节点大小 = 记忆数量
+       color: getShadeColor(cluster.shade_id) // 根据 Shade 分配颜色
+     };
+   });
+   ```
+
+2. **激活路径可视化**:
+   *   当用户查询时，高亮相关的记忆节点
+   *   显示从查询到检索结果的激活路径
+   *   使用粒子效果或高亮动画展示信息流动
+
+3. **交互功能**:
+   *   鼠标悬停显示节点详情（Shade 名称、记忆数量）
+   *   点击节点跳转到对应的记忆列表
+   *   支持缩放、旋转、拖拽操作
 
 ### 3.4 安全与隐私架构 (Security & Privacy)
 *   **Local-First / Offline-Capable**: 数据（向量、权重、日志）全链路本地存储，支持断网运行。
