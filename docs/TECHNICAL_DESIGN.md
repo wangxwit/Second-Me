@@ -111,6 +111,100 @@ flowchart TD
 *   **职责**: 处理高频交互，进行原始数据的清洗、分块与洞察提取。
 *   **核心流程**: `L0Generator` 调用 Vision/Audio 模型将非结构化数据转化为结构化的 `DocumentDTO` (含摘要、关键词、情感标签)。
 
+#### 4.1.1 L0 数据生成流程
+
+**输入**: 原始数据（文本、图片、音频、链接）+ 用户传记信息（Bio）
+
+**处理流程**:
+
+1. **数据分类与预处理**
+   ```python
+   # 根据数据类型选择处理方式
+   datatype = DataType(inputs.file_info.data_type)  # IMAGE/AUDIO/DOCUMENT
+   
+   # 提取用户传记信息
+   bio = {
+       "global_bio": inputs.bio_info.global_bio,    # 全局传记
+       "status_bio": inputs.bio_info.status_bio,    # 活动状态
+       "about_me": inputs.bio_info.about_me          # 自我介绍
+   }
+   ```
+
+2. **多模态洞察生成**（根据数据类型）
+
+   **图片处理** (`_insighter_image`):
+   ```python
+   # Step 1: 图片情感分类
+   # 使用 insight_image_parser Prompt，调用 Vision 模型
+   # 分类结果: "Emotion" 或 "Knowledge"
+   
+   # Step 2: 生成情感化摘要
+   # 使用 insight_image_overview Prompt
+   # 输出: {"Title": "...", "Opening": "温暖、共情的开场..."}
+   
+   # Step 3: 生成深度洞察
+   # 使用 insight_image_breakdown Prompt
+   # 输出: {"Insight": ["洞察1", "洞察2", ...]}
+   ```
+
+   **音频处理** (`_insighter_audio`):
+   ```python
+   # Step 1: 生成概述
+   # 使用 insight_audio_overview Prompt
+   # 输出: {"Title": "...", "Overview": "会议/讲座摘要..."}
+   
+   # Step 2: 生成详细分解
+   # 使用 insight_audio_breakdown Prompt
+   # 输出: {"Breakdown": {"🚀主题1": [["要点1", "详细说明", "时间戳"], ...]}}
+   ```
+
+   **文档处理** (`_insighter_doc`):
+   ```python
+   # Step 1: 生成概述
+   # 使用 insight_doc_overview Prompt
+   # 结合用户传记，生成个性化摘要
+   # 输出: {"Title": "...", "Overview": "..."}
+   
+   # Step 2: 生成详细分解
+   # 使用 insight_doc_breakdown Prompt
+   # 输出: {"Breakdown": {"[Emoji]主题1": [["结论1", "详细说明"], ...]}}
+   ```
+
+3. **生成向量嵌入**
+   ```python
+   # 使用 EmbeddingService 生成文档级嵌入
+   embedding = embedding_service.generate_document_embedding(document)
+   # 存储到 ChromaDB 的 "documents" 集合
+   ```
+
+4. **生成文档摘要** (`summarizer`)
+   ```python
+   # 使用 NOTE_SUMMARY_PROMPT
+   # 输出: {
+   #   "title": "文档标题",
+   #   "summary": "摘要内容",
+   #   "keywords": ["关键词1", "关键词2", ...]
+   # }
+   ```
+
+**输出**: `DocumentDTO`
+```python
+{
+    "title": "生成的标题",
+    "insight": "生成的洞察内容（包含 Overview + Breakdown）",
+    "summary": "文档摘要",
+    "keywords": ["关键词列表"],
+    "embedding": [向量嵌入],
+    "data_type": "IMAGE/AUDIO/DOCUMENT",
+    "emotion_tag": "Emotion/Knowledge"  # 仅图片
+}
+```
+
+**存储位置**:
+- **元数据**: SQLite 数据库 `document` 表
+- **向量**: ChromaDB `documents` 集合
+- **分块**: ChromaDB `document_chunks` 集合（如果文档被分块）
+
 ### 4.2 L1: 身份与结构层 (Identity & Structure)
 **隐喻**: **SSD / Hard Drive (Long-term Memory)**
 *   **职责**: 存储结构化事实与经历，构建身份骨架。
@@ -119,6 +213,116 @@ flowchart TD
     *   `Cluster`: 语义聚类。
     *   `Shade`: 人格侧影 (如 "Python 专家", "科幻爱好者")。
     *   `Bio`: 全局传记。
+
+#### 4.2.1 L1 数据生成流程
+
+**输入**: L0 层的 `DocumentDTO` 数据
+
+**处理流程**:
+
+1. **生成 Note（记忆原子）**
+   ```python
+   # 从 DocumentDTO 转换为 Note
+   note = Note(
+       content=document_dto.insight,      # L0 生成的洞察内容
+       embedding=document_dto.embedding,  # 向量嵌入
+       memory_type="SUBJECTIVE/OBJECTIVE", # 主观/客观记忆
+       insight=document_dto.insight_json   # 结构化洞察
+   )
+   # 存储到 SQLite 数据库的 notes 表
+   ```
+
+2. **生成 Cluster（语义聚类）**
+   ```python
+   # 使用 TopicsGenerator 进行层次聚类
+   topics_generator = TopicsGenerator()
+   
+   # Step 1: 提取所有 Note 的向量嵌入
+   memory_embeddings = [note.embedding for note in note_list]
+   
+   # Step 2: 层次聚类（Ward 方法）
+   from scipy.cluster.hierarchy import linkage, fcluster
+   linked = linkage(memory_embeddings, method="ward")
+   clusters = fcluster(linked, cophenetic_distance, criterion="distance")
+   
+   # Step 3: 将 Note 分配到 Cluster
+   cluster_dict = {}
+   for note, label in zip(note_list, clusters):
+       if label not in cluster_dict:
+           cluster_dict[label] = Cluster(clusterId=label, is_new=True)
+       cluster_dict[label].add_memory(note)
+   
+   # Step 4: 计算 Cluster 中心向量
+   cluster.cluster_center = np.mean([m.embedding for m in cluster.memory_list], axis=0)
+   
+   # Step 5: 修剪离群点（保留核心成员）
+   cluster.prune_outliers_from_cluster()  # 保留距离中心最近的 80% 成员
+   
+   # Step 6: 生成 Cluster 主题和摘要
+   # 使用 LLM 基于 Cluster 内的 Note 生成主题描述
+   cluster.topic = generate_topic_from_notes(cluster.memory_list)
+   cluster.summary = generate_summary_from_notes(cluster.memory_list)
+   ```
+
+3. **生成 Shade（人格侧影）**
+   ```python
+   # 使用 ShadeGenerator 基于 Cluster 生成 Shade
+   shade_generator = ShadeGenerator()
+   
+   # Step 1: 初始生成（新 Cluster）
+   if not existing_shade:
+       shade = shade_generator._initial_shade_process(cluster.memory_list)
+       # 使用 LLM 分析 Cluster 内的记忆，生成 Shade 名称和描述
+       # 输出: ShadeInfo(name="Python 专家", desc="...", ...)
+   
+   # Step 2: 更新 Shade（已有 Shade，新增记忆）
+   else:
+       shade = shade_generator._improve_shade_info(new_memory_list, old_shade)
+       # 基于新记忆更新 Shade 的描述和置信度
+   
+   # Step 3: Me-Alignment 处理
+   # 将第三人称描述转换为第一人称
+   # "User is a Python expert" -> "I am a Python expert"
+   shade.desc_second_view = apply_me_alignment(shade.description)
+   
+   # Step 4: 计算置信度
+   # 基于记忆数量、频率、时效性计算
+   shade.confidence = calculate_confidence(
+       memory_count=len(cluster.memory_list),
+       frequency=shade.frequency,
+       recency=shade.recency
+   )
+   ```
+
+4. **生成 Bio（全局传记）**
+   ```python
+   # 使用 L1Generator 生成全局传记
+   l1_generator = L1Generator()
+   
+   # Step 1: 整合所有 Shade
+   bio = Bio(shades=[shade1, shade2, ...])
+   
+   # Step 2: 生成全局描述
+   # 使用 GLOBAL_BIO_SYSTEM_PROMPT
+   # 基于所有 Shade 生成用户的完整人格画像
+   bio.global_bio = generate_global_bio(bio.shades)
+   
+   # Step 3: 生成状态传记（Status Bio）
+   # 使用 StatusBioGenerator
+   # 基于最近的 Note、Todo、Chat 生成活动状态
+   status_bio = status_bio_generator.generate(
+       notes=recent_notes,
+       todos=recent_todos,
+       chats=recent_chats
+   )
+   bio.status_bio = status_bio
+   ```
+
+**输出**: 结构化的 L1 数据
+- **Note**: 存储在 `notes` 表
+- **Cluster**: 存储在 `l1_clusters` 表
+- **Shade**: 存储在 `l1_shades` 表
+- **Bio**: 存储在 `l1_bios` 表
 
 **记忆实体关系图 (ER Diagram)**:
 ```mermaid
@@ -150,6 +354,154 @@ erDiagram
 *   **职责**: 将 L1 的显性知识内化为隐性的模型权重 (Weight)。
 *   **特殊机制**: 不依赖检索，而是通过 **SFT + LoRA** 改变模型本身的反应模式。
 *   **Deep Reasoning**: 集成 DeepSeek R1 逻辑，在训练数据中注入 `<think>` 标签，学习用户的思维方式。
+
+#### 4.3.1 L2 数据生成流程
+
+**输入**: L1 层的结构化数据（Note、Cluster、Shade、Bio）
+
+**处理流程**:
+
+1. **数据预处理** (`L2DataProcessor`)
+   ```python
+   # Step 1: 按类型分离 Note
+   subjective_notes, objective_notes = split_notes_by_type(note_list)
+   
+   # Step 2: 数据精炼
+   subjective_notes_remade = refine_notes_data_subjective(subjective_notes)
+   objective_notes_remade = refine_notes_data_objective(objective_notes)
+   
+   # Step 3: 转换为文本格式（用于 GraphRAG）
+   json_to_txt_each(subjective_notes_remade, output_dir="subjective")
+   json_to_txt_each(objective_notes_remade, output_dir="objective")
+   
+   # Step 4: GraphRAG 索引（提取实体和关系）
+   graphrag_indexing(
+       notes=subjective_notes_remade,
+       output_dir="graphrag_indexing_output"
+   )
+   # 输出: entities.json, topics.json, graph.json
+   ```
+
+2. **生成训练数据** (`L2Generator.gen_subjective_data`)
+
+   **SelfQA 数据生成**:
+   ```python
+   selfqa_generator = SelfQA(
+       user_name=basic_info["username"],
+       user_global_bio=basic_info["globalBio"],
+       is_cot=True  # 使用 CoT 模式
+   )
+   
+   # Step 1: 生成问题列表
+   questions = [
+       "Who am I?",
+       "How would you describe who I am?",
+       "What makes me, me?",
+       ...
+   ]
+   
+   # Step 2: 基于用户的 Bio 和记忆生成回答
+   for question in questions:
+       answer = selfqa_generator.generate_answer(
+           question=question,
+           user_bio=global_bio,
+           user_memories=note_list
+       )
+       # 如果启用 CoT，输出格式：
+       # <think>推理过程</think>
+       # <answer>最终回答</answer>
+   
+   # Step 3: 保存为 selfqa.json
+   # 格式: [{"user": "问题", "assistant": "回答"}, ...]
+   ```
+
+   **Preference 数据生成**:
+   ```python
+   preference_generator = PreferenceQAGenerator(...)
+   
+   # Step 1: 基于用户的 Shade 生成偏好表达
+   for shade in shade_list:
+       # 分析 Shade 相关的记忆，生成偏好
+       preference = preference_generator.generate_preference(
+           shade=shade,
+           related_notes=shade.cluster.memory_list
+       )
+       # 输出: {"preferred": "偏好选项", "rejected": "不偏好选项"}
+   
+   # Step 2: 保存为 preference.json
+   ```
+
+   **Diversity 数据生成**:
+   ```python
+   diversity_generator = DiversityDataGenerator(...)
+   
+   # Step 1: 基于 Cluster 和实体生成多样化问答
+   for cluster in cluster_list:
+       # 从 GraphRAG 提取的实体
+       entities = load_entities(entities_path)
+       
+       # 生成多种类型的问题
+       question_types = {
+           "factual": {"weight": 0.3},    # 事实性问题
+           "analytical": {"weight": 0.4}, # 分析性问题
+           "creative": {"weight": 0.3}    # 创造性问题
+       }
+       
+       # 基于 Cluster 内容生成问答对
+       qa_pairs = diversity_generator.generate_data(
+           clusters=[cluster],
+           entities=entities,
+           question_types=question_types
+       )
+   
+   # Step 2: 保存为 diversity.json
+   ```
+
+3. **合并训练数据**
+   ```python
+   # 合并所有 JSON 文件
+   merged_data = []
+   merged_data.extend(load_json("selfqa.json"))
+   merged_data.extend(load_json("preference.json"))
+   merged_data.extend(load_json("diversity.json"))
+   
+   # 保存为 merged.json（用于训练）
+   save_json("merged.json", merged_data)
+   ```
+
+**输出**: `merged.json` 训练数据文件
+```json
+[
+    {
+        "user": "Who am I?",
+        "assistant": "<think>基于用户的记忆...</think>\n<answer>我是...</answer>"
+    },
+    {
+        "user": "问题",
+        "assistant": "回答"
+    },
+    ...
+]
+```
+
+**数据格式转换**（训练前）:
+```python
+# 转换为训练格式
+def create_chat_data(data_args, tokenizer):
+    def preprocess(sample, user_name='user', is_cot=False):
+        # 构建对话格式
+        messages = [
+            {"role": "system", "content": MEMORY_COT_PROMPT.format(user_name=user_name)},
+            {"role": "user", "content": sample["user"]},
+            {"role": "assistant", "content": sample["assistant"]}
+        ]
+        # 应用 Chat Template
+        return tokenizer.apply_chat_template(messages, tokenize=False)
+    
+    # 转换为 Dataset
+    dataset = Dataset.from_dict({"text": [preprocess(s) for s in merged_data]})
+    return dataset
+```
 
 ---
 
