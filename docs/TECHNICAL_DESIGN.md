@@ -160,22 +160,26 @@ AI 产生“自我意识”的关键算法：
 **高级对话 Prompt 策略流 (Strategy Chain)**:
 ```mermaid
 graph TD
-    Start[User Request] --> Strategy{Chat Strategy}
+    Start["User Request"] --> Strategy{"Chat Strategy"}
     
-    Strategy -- Advanced Mode --> ReqEnhance[Requirement Enhancement<br/>(Clarify Intent)]
-    ReqEnhance --> Expert[Expert Solution<br/>(Generate Draft)]
-    Expert --> Validator{Validator<br/>(Is Solution Valid?)}
+    Strategy -->|Advanced Mode| ReqEnhance["Requirement Enhancement"]
+    ReqEnhance --> Expert["Expert Solution"]
+    Expert --> Validator{"Validator"}
     
-    Validator -- No --> Feedback[Critic Feedback]
+    Validator -->|No| Feedback["Critic Feedback"]
     Feedback --> Expert
     
-    Validator -- Yes --> Formatter[Solution Formatter<br/>(Style & Structure)]
-    Formatter --> Response[Final Streaming Response]
+    Validator -->|Yes| Formatter["Solution Formatter"]
+    Formatter --> Response["Final Streaming Response"]
     
-    Strategy -- Normal Mode --> Retrieval[Knowledge Retrieval]
-    Retrieval --> Role[Role Injection]
+    Strategy -->|Normal Mode| Retrieval["Knowledge Retrieval"]
+    Retrieval --> Role["Role Injection"]
     Role --> Response
 ```
+
+> **说明**: 
+> - **Advanced Mode**: Requirement Enhancement (澄清意图) → Expert Solution (生成草案) → Validator (验证) → Solution Formatter (格式化) → Final Response
+> - **Normal Mode**: Knowledge Retrieval (知识检索) → Role Injection (角色注入) → Final Response
 
 ### 6.2 部署策略
 *   **Concurrency Control**: 严格的 `Concurrency=1` 队列，防止本地 VRAM 溢出。
@@ -204,11 +208,13 @@ graph LR
 **Me-Alignment 视角转换流程**:
 ```mermaid
 flowchart LR
-    Input["Raw Data (Third Person)<br/>'User likes Python'"] --> Algo[Me-Alignment Algo]
+    Input["Raw Data Third Person"] --> Algo["Me-Alignment Algo"]
     Algo --> Prompt["Transformation Prompt"]
-    Prompt --> Output["Identity Shade (First Person)<br/>'I like Python'"]
+    Prompt --> Output["Identity Shade First Person"]
     Output --> L2Train["L2 Training Set"]
 ```
+
+> **说明**: 将第三人称描述（如 "User likes Python"）转换为第一人称身份侧影（如 "I like Python"），用于 L2 训练数据生成。
 
 | 层级 | 关键 Prompt | 作用 |
 | :--- | :--- | :--- |
