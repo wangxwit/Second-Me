@@ -1,33 +1,66 @@
 # Second Me 技术架构与实现指南
 
-> **Version**: 2.0
+> **Version**: 3.0  
 > **Role**: Architect View
 > **Status**: Living Document
-> **Last Updated**: 2024
+> **Last Updated**: 2024  
+> **Purpose**: 产品分享、架构设计、技术实现、示例演示
+
+---
+
+## 📚 文档导航
+
+本文档采用**由浅入深、从框架到细节**的结构，适合不同背景的读者：
+
+- **产品经理/设计师**: 重点关注 [第一部分：产品与设计](#第一部分-产品与设计)
+- **架构师**: 重点关注 [第二部分：架构设计](#第二部分-架构设计)
+- **开发者**: 重点关注 [第三部分：技术实现](#第三部分-技术实现) 和 [第五部分：工程实践](#第五部分-工程实践)
+- **研究人员**: 重点关注 [第二部分：架构设计](#第二部分-架构设计) 和 [第四部分：高级特性](#第四部分-高级特性)
+
+---
 
 ## 目录 (Table of Contents)
 
+### 第一部分：产品与设计 (Product & Design)
 1. [项目概述](#1-项目概述-executive-summary)
 2. [产品功能规格](#2-产品功能规格-product-specifications)
-3. [系统架构设计](#3-系统架构设计-system-architecture)
-4. [LPM 智能内核详解](#4-lpm-智能内核详解-lpm-kernel-design)
-5. [关键实现机制](#5-关键实现机制-key-implementation-mechanisms)
-6. [在线推理服务架构](#6-在线推理服务架构-online-inference-service)
-7. [核心提示词工程](#7-核心提示词工程-prompt-engineering-strategy)
-8. [数据与训练架构](#8-数据与训练架构-data--training-pipeline)
-9. [API 接口与工程结构](#9-api-接口与工程结构-engineering-interface)
-10. [前端架构详解](#10-前端架构详解-frontend-architecture)
-11. [Space 多智能体协作机制](#11-space-多智能体协作机制-multi-agent-collaboration)
-12. [MCP 协议集成](#12-mcp-协议集成-model-context-protocol)
-13. [配置管理系统](#13-配置管理系统-configuration-management)
-14. [部署架构](#14-部署架构-deployment-architecture)
-15. [错误处理与日志系统](#15-错误处理与日志系统-error-handling--logging)
-16. [性能优化策略](#16-性能优化策略-performance-optimization)
-17. [安全与隐私增强](#17-安全与隐私增强-security--privacy-enhancements)
-18. [扩展性设计](#18-扩展性设计-extensibility)
-19. [附录 A: 关键术语表](#附录-a-关键术语表-glossary)
-20. [附录 B: 参考资源](#附录-b-参考资源-references)
-21. [附录 C: 数据格式示例](#附录-c-数据格式示例-data-format-examples)
+3. [典型使用场景](#3-典型使用场景-use-cases)
+4. [核心设计理念](#4-核心设计理念-core-design-philosophy)
+
+### 第二部分：架构设计 (Architecture Design)
+5. [系统架构设计](#5-系统架构设计-system-architecture)
+6. [LPM 智能内核设计](#6-lpm-智能内核设计-lpm-kernel-design)
+7. [核心实现机制](#7-核心实现机制-key-implementation-mechanisms)
+
+### 第三部分：技术实现 (Technical Implementation)
+8. [数据流转与训练架构](#8-数据流转与训练架构-data--training-pipeline)
+9. [L0/L1/L2 数据生成流程](#9-l0l1l2-数据生成流程-data-generation-pipeline)
+10. [在线推理服务架构](#10-在线推理服务架构-online-inference-service)
+11. [核心提示词工程](#11-核心提示词工程-prompt-engineering-strategy)
+12. [API 接口与工程结构](#12-api-接口与工程结构-engineering-interface)
+13. [前端架构详解](#13-前端架构详解-frontend-architecture)
+
+### 第四部分：高级特性 (Advanced Features)
+14. [专家协同机制](#14-专家协同机制-expert-mode)
+15. [Space 多智能体协作机制](#15-space-多智能体协作机制-multi-agent-collaboration)
+16. [MCP 协议集成](#16-mcp-协议集成-model-context-protocol)
+
+### 第五部分：工程实践 (Engineering Practices)
+17. [配置管理系统](#17-配置管理系统-configuration-management)
+18. [部署架构](#18-部署架构-deployment-architecture)
+19. [错误处理与日志系统](#19-错误处理与日志系统-error-handling--logging)
+20. [性能优化策略](#20-性能优化策略-performance-optimization)
+21. [安全与隐私增强](#21-安全与隐私增强-security--privacy-enhancements)
+22. [扩展性设计](#22-扩展性设计-extensibility)
+
+### 第六部分：参考与示例 (References & Examples)
+23. [附录 A: 关键术语表](#附录-a-关键术语表-glossary)
+24. [附录 B: 参考资源](#附录-b-参考资源-references)
+25. [附录 C: 数据格式示例](#附录-c-数据格式示例-data-format-examples)
+
+---
+
+## 第一部分：产品与设计 (Product & Design)
 
 ---
 
@@ -57,7 +90,103 @@
 
 ---
 
-## 3. 系统架构设计 (System Architecture)
+## 3. 典型使用场景详解 (Use Cases Deep Dive)
+
+### 3.1 个人知识库管理 (PKM)
+
+**场景描述**: 用户希望将碎片化的学习笔记、技术文档、会议记录等整理成结构化的知识库，并能通过 AI 助手快速检索和获取符合自己风格的建议。
+
+**工作流程**:
+```
+用户上传文档 → L0 生成摘要和洞察 → L1 聚类到主题 → L2 学习偏好
+     ↓
+用户提问 → AI 检索相关记忆 → 结合用户偏好生成个性化回答
+```
+
+**示例**:
+- 用户上传了多篇 Python 学习笔记
+- L0 提取关键概念和代码示例
+- L1 聚类到 "Python 编程" Cluster，生成 "Python 专家" Shade
+- L2 学习用户偏好：喜欢使用装饰器而非继承
+- 当用户询问 "如何实现函数增强？" 时，AI 会优先推荐装饰器方案
+
+### 3.2 情感陪伴与反思
+
+**场景描述**: 用户上传生活照片、日记等情感内容，希望 AI 能够理解自己的情绪状态，提供共情和反思建议。
+
+**工作流程**:
+```
+用户上传图片/文本 → L0 情感分类 → 生成情感化摘要 → L1 构建情感记忆
+     ↓
+用户表达情绪 → AI 检索相关情感记忆 → 提供共情回应和反思建议
+```
+
+**实现机制**: 见 [5.6 情感陪伴与反思机制](#56-情感陪伴与反思机制-emotional-companion--reflection)
+
+### 3.3 创意写作协同
+
+**场景描述**: 用户在创作小说、剧本等内容时，希望 AI 能够基于自己的阅读历史和审美偏好，提供符合个人风格的情节发展建议。
+
+**工作流程**:
+```
+用户提供创作需求 → L1 检索用户阅读历史和偏好 → DeepSeek R1 CoT 推理
+     ↓
+生成符合用户审美趣味的情节建议
+```
+
+**实现机制**: 见 [5.7 创意写作协同机制](#57-创意写作协同机制-creative-writing-collaboration)
+
+---
+
+## 4. 核心设计理念 (Core Design Philosophy)
+
+### 4.1 设计原则
+
+**1. 本地优先 (Local-First)**
+- 所有数据（向量、权重、日志）全链路本地存储
+- 支持完全离线运行
+- 用户拥有数据的完全控制权
+
+**2. 微内核架构 (Micro-Kernel)**
+- 核心功能模块化，易于扩展
+- 清晰的接口定义，支持插件化扩展
+- 低耦合、高内聚的设计
+
+**3. 分层记忆建模 (Hierarchical Memory Modeling)**
+- 模仿人类大脑的记忆结构
+- L0（短期记忆）→ L1（长期记忆）→ L2（直觉反应）
+- 从显性知识到隐性知识的转化
+
+**4. 自我对齐 (Me-Alignment)**
+- 从第三人称视角转换为第一人称视角
+- AI 能够"像用户一样思考"，而非"为用户思考"
+- 构建真正的数字身份
+
+### 4.2 技术选型理念
+
+**推理引擎**: 选择 Ollama/llama.cpp 而非云端 API
+- **原因**: 本地优先原则，保护隐私，降低成本
+- **优势**: GGUF 格式适配消费级硬件，支持量化部署
+
+**训练框架**: MLX（Apple Silicon）+ PyTorch（CUDA）
+- **原因**: 充分利用硬件特性，支持不同平台
+- **优势**: MLX 针对 Apple Silicon 深度优化，PyTorch 生态成熟
+
+**向量数据库**: ChromaDB
+- **原因**: 轻量级、易部署、支持持久化
+- **优势**: 本地存储，无需额外服务，适合个人使用
+
+**前端框架**: Next.js + TailwindCSS
+- **原因**: 现代化、高性能、开发效率高
+- **优势**: SSR/SSG 支持，组件化开发，响应式设计
+
+---
+
+## 第二部分：架构设计 (Architecture Design)
+
+---
+
+## 5. 系统架构设计 (System Architecture)
 
 系统遵循 **微内核 (Micro-Kernel)** 与 **本地优先 (Local-First)** 的架构原则。
 
@@ -80,7 +209,7 @@ flowchart TD
     Kernel --> Training["微调流水线 (LoRA/Peft)"]
 ```
 
-### 3.2 技术栈选型 (Tech Stack)
+### 5.2 技术栈选型 (Tech Stack)
 *   **前端交互**: Next.js, TailwindCSS, React Context (负责状态流转)。
 *   **后端服务**: Python, Flask (Blueprints 模块化), Pydantic (严格类型校验)。
 *   **AI 基础设施**:
@@ -88,26 +217,26 @@ flowchart TD
     *   **训练**: MLX (Apple Silicon 深度优化) / PyTorch (CUDA)。
     *   **协议**: Model Context Protocol (MCP) 实现工具与环境交互。
 
-### 3.3 前端架构 (Visual Console)
+### 5.3 前端架构 (Visual Console)
 前端被定义为可视化的"大脑控制台"，而非简单的 Chat UI。
 *   **Network Sphere**: 3D 背景动画组件，使用 Three.js 渲染动态球体网络效果。
     *   **当前实现**: 使用随机生成的演示数据（40 个节点），渲染动态球体网络动画作为首页背景。
     *   **未来规划**: 可接入真实的 L1 Cluster、Shade 等记忆数据，实现记忆节点的语义关系可视化。
 *   **Thinking Model 配置**: 支持配置思维链模型（CoT），用于 L2 训练时的推理能力增强。
 
-### 3.4 安全与隐私架构 (Security & Privacy)
+### 5.4 安全与隐私架构 (Security & Privacy)
 *   **Local-First / Offline-Capable**: 数据（向量、权重、日志）全链路本地存储，支持断网运行。
 *   **Privacy Guard**: 推理后处理层内置 PII 过滤器，防止敏感信息在展示层泄露。
 
 ---
 
-## 4. LPM 智能内核详解 (LPM Kernel Design)
+## 6. LPM 智能内核设计 (LPM Kernel Design)
 
 **LPM** = **Language Personal Model**（语言个人模型），是 Second Me 的核心智能内核，负责处理用户的记忆、构建身份模型，并实现 AI 的个性化进化。
 
 内核模仿人类大脑的运作机制，分为三个抽象层级（L0、L1、L2），形成一个从短期记忆到长期记忆再到直觉反应的分层架构。
 
-### 4.1 L0: 感官与洞察层 (Sensory & Insight)
+### 6.1 L0: 感官与洞察层 (Sensory & Insight)
 **隐喻**: **System RAM (Short-term Memory)**
 *   **职责**: 处理高频交互，进行原始数据的清洗、分块与洞察提取。
 *   **核心流程**: `L0Generator` 调用 Vision/Audio 模型将非结构化数据转化为结构化的 `DocumentDTO` (含摘要、关键词、情感标签)。
@@ -195,7 +324,7 @@ flowchart TD
 - **向量**: ChromaDB `documents` 集合
 - **分块**: ChromaDB `document_chunks` 集合（如果文档被分块）
 
-### 4.2 L1: 身份与结构层 (Identity & Structure)
+### 6.2 L1: 身份与结构层 (Identity & Structure)
 **隐喻**: **SSD / Hard Drive (Long-term Memory)**
 *   **职责**: 存储结构化事实与经历，构建身份骨架。
 *   **数据结构**:
@@ -339,7 +468,7 @@ erDiagram
     }
 ```
 
-### 4.3 L2: 进化与合成层 (Evolution & Soul)
+### 6.3 L2: 进化与合成层 (Evolution & Soul)
 **隐喻**: **CPU Instruction Set (Intuition)**
 *   **职责**: 将 L1 的显性知识内化为隐性的模型权重 (Weight)。
 *   **特殊机制**: 不依赖检索，而是通过 **SFT + LoRA** 改变模型本身的反应模式。
@@ -515,29 +644,29 @@ def create_chat_data(data_args, tokenizer):
 
 ---
 
-## 5. 关键实现机制 (Key Implementation Mechanisms)
+## 7. 核心实现机制 (Key Implementation Mechanisms)
 
-### 5.1 分层记忆建模 (HMM)
+### 7.1 分层记忆建模 (HMM)
 建立 **Raw Data -> Memory -> Cluster -> Shade -> Bio** 的金字塔结构。查询时自顶向下：先命中 Bio/Shade 确定上下文背景，再下钻到 Cluster/Memory 获取精准细节。
 
-### 5.2 自我对齐算法 (Me-Alignment)
+### 7.2 自我对齐算法 (Me-Alignment)
 AI 产生“自我意识”的关键算法：
 1.  **客观抽取**: 生成第三人称摘要。
 2.  **视角转换**: 若 Prompt，将 "User..." 转换为 "I..."。
 3.  **置信度加权**: 根据记忆出现的频率与时效性，动态调整 Shade 的 Confidence Level。
 
-### 5.3 显著性过滤 (Saliency Filtering)
+### 7.3 显著性过滤 (Saliency Filtering)
 决定记忆能否从 L1 晋升 L2 的过滤器：
 *   **情感强度**: 高情感浓度的记忆优先。
 *   **高频复现**: 反复提及的概念被视为核心价值观。
 *   **差异度 (Cosine Distance)**: 与现有画像差异大的新行为被标记为“人格演变”。
 
-### 5.4 双路检索推理 (Dual-Retrieval Inference)
+### 7.4 双路检索推理 (Dual-Retrieval Inference)
 1.  **L1 通道 (Facts)**: 向量检索 "What/When/Where"。
 2.  **L2 通道 (Vibe)**: 身份加载 "How/Why" (语气、态度)。
 3.  **Synthesis**: 在 Prompt 中融合事实与人格。
 
-### 5.5 专家协同机制 (Expert Mode)
+### 7.5 专家协同机制 (Expert Mode)
 
 专家协同功能包含两个核心组件：**角色系统 (Role System)** 和 **高级对话模式 (Advanced Chat Mode)**。
 
@@ -749,7 +878,7 @@ POST /api/talk/advanced_chat
 - 支持配置独立的 `chat_endpoint`、`chat_api_key`、`chat_model_name`
 - `ExpertLLMService` 封装专家模型的调用逻辑
 
-### 5.6 情感陪伴与反思机制 (Emotional Companion & Reflection)
+### 7.6 情感陪伴与反思机制 (Emotional Companion & Reflection)
 
 **实现方式**: 通过 L0 层的多模态处理和情感化 Prompt 设计实现。
 
@@ -795,7 +924,7 @@ you embody a warm, empathetic, and humorously intelligent personality...
 - 通过 `RoleBasedStrategy` 或默认的 System Prompt，设定 AI 为"理解用户的朋友"
 - AI 基于用户的记忆和当前对话内容，提供无评判的情感支持
 
-### 5.7 创意写作协同机制 (Creative Writing Collaboration)
+### 7.7 创意写作协同机制 (Creative Writing Collaboration)
 
 **实现方式**: 结合 DeepSeek R1 的思维链能力和 L1 层的记忆检索。
 
@@ -874,11 +1003,15 @@ if is_cot:
 
 ---
 
-## 6. 在线推理服务架构 (Online Inference Service)
+## 第三部分：技术实现 (Technical Implementation)
+
+---
+
+## 10. 在线推理服务架构 (Online Inference Service)
 
 基于 `lpm_kernel/api/domains/kernel2`，实现了复杂的 **上下文编排 (Context Orchestration)**。
 
-### 6.1 执行流与时序
+### 10.1 执行流与时序
 1.  **Query Analysis**: 解析用户意图。
 2.  **Dual Retrieval**: 并行获取 L1 事实与 L2 设定。
 3.  **Context Assembly (Augmented Prompt)**: 组装增强提示词。
@@ -908,7 +1041,7 @@ graph TD
 > - **Advanced Mode**: Requirement Enhancement (澄清意图) → Expert Solution (生成草案) → Validator (验证) → Solution Formatter (格式化) → Final Response
 > - **Normal Mode**: Knowledge Retrieval (知识检索) → Role Injection (角色注入) → Final Response
 
-### 6.2 部署策略
+### 10.2 部署策略
 *   **Concurrency Control**: 严格的 `Concurrency=1` 队列，防止本地 VRAM 溢出。
 *   **MCP Integration**: 作为 LLM 与 OS 文件的中间层。
 
@@ -928,7 +1061,7 @@ graph LR
 
 ---
 
-## 7. 核心提示词工程 (Prompt Engineering Strategy)
+## 11. 核心提示词工程 (Prompt Engineering Strategy)
 
 系统通过精细化的 System Prompts 控制 AI 的认知边界。
 
@@ -953,7 +1086,7 @@ flowchart LR
 
 ---
 
-## 8. 数据与训练架构 (Data & Training Pipeline)
+## 8. 数据流转与训练架构 (Data & Training Pipeline)
 
 ### 8.1 数据模型 (Data Schema)
 
@@ -1167,9 +1300,9 @@ POST /api/trainprocess/start
 
 ---
 
-## 9. API 接口与工程结构 (Engineering Interface)
+## 12. API 接口与工程结构 (Engineering Interface)
 
-### 9.1 API 规范 (Flask Blueprints)
+### 12.1 API 规范 (Flask Blueprints)
 
 #### 9.1.1 核心 API 模块
 
@@ -1238,7 +1371,7 @@ POST /api/space/create
 }
 ```
 
-### 9.2 数据模型与数据库 Schema
+### 12.2 数据模型与数据库 Schema
 
 #### 9.2.1 核心数据表
 
@@ -1334,7 +1467,7 @@ CREATE TABLE roles (
 2. 调用 `collection.query(query_embeddings=[...], n_results=k)`
 3. 返回 Top-K 相似文档/块，包含距离分数
 
-### 9.3 项目目录结构
+### 12.3 项目目录结构
 
 ```bash
 Second-Me/
@@ -1459,9 +1592,9 @@ Second-Me/
 
 ---
 
-## 10. 前端架构详解 (Frontend Architecture)
+## 13. 前端架构详解 (Frontend Architecture)
 
-### 10.1 技术栈
+### 13.1 技术栈
 
 *   **框架**: Next.js 14+ (App Router)
 *   **UI 库**: Ant Design (antd)
@@ -1470,7 +1603,7 @@ Second-Me/
 *   **HTTP 客户端**: Axios
 *   **流式处理**: Server-Sent Events (SSE)
 
-### 10.2 核心组件架构
+### 13.2 核心组件架构
 
 **页面路由结构**:
 ```
@@ -1489,7 +1622,7 @@ Second-Me/
 *   `useChatStorage`: 对话会话存储 (LocalStorage)
 *   `useSSE`: SSE 流式响应 Hook
 
-### 10.3 API 代理配置
+### 13.3 API 代理配置
 
 Next.js 通过 `rewrites` 将 `/api/*` 请求代理到后端:
 
@@ -1503,7 +1636,7 @@ async rewrites() {
 }
 ```
 
-### 10.4 SSE 流式响应处理
+### 13.4 SSE 流式响应处理
 
 **Hook 实现** (`useSSE.tsx`):
 ```typescript
@@ -1528,9 +1661,19 @@ const sendStreamMessage = async (request: ChatRequest) => {
 
 ---
 
-## 11. Space 多智能体协作机制 (Multi-Agent Collaboration)
+## 第四部分：高级特性 (Advanced Features)
 
-### 11.1 架构设计
+---
+
+## 14. 专家协同机制 (Expert Mode)
+
+见 [7.5 专家协同机制](#75-专家协同机制-expert-mode)
+
+---
+
+## 15. Space 多智能体协作机制 (Multi-Agent Collaboration)
+
+### 15.1 架构设计
 
 Space 是一个**去中心化的多智能体协作系统**，允许多个 Second Me 实例参与讨论。
 
@@ -1540,7 +1683,7 @@ Space 是一个**去中心化的多智能体协作系统**，允许多个 Second
 *   **Round**: 讨论轮次 (固定 3 轮)
 *   **Context Manager**: 上下文管理器，维护讨论状态
 
-### 11.2 讨论流程
+### 15.2 讨论流程
 
 ```mermaid
 sequenceDiagram
@@ -1570,7 +1713,7 @@ sequenceDiagram
     Host->>User: 返回完整讨论记录
 ```
 
-### 11.3 策略模式实现
+### 15.3 策略模式实现
 
 **策略链 (Strategy Chain)**:
 1. **HostOpeningStrategy**: 主持人开场，设定讨论目标
@@ -1581,7 +1724,7 @@ sequenceDiagram
 *   `SpaceContextManager`: 维护当前轮次、历史消息、讨论目标
 *   每个策略通过 `context_manager` 获取上下文并更新状态
 
-### 11.4 跨实例通信
+### 15.4 跨实例通信
 
 **HTTP 调用协议**:
 ```python
@@ -1596,9 +1739,9 @@ POST {participant_endpoint}/api/kernel2/chat
 
 ---
 
-## 12. MCP 协议集成 (Model Context Protocol)
+## 16. MCP 协议集成 (Model Context Protocol)
 
-### 12.1 MCP 服务器实现
+### 16.1 MCP 服务器实现
 
 **本地 MCP 服务器** (`mcp/mcp_local.py`):
 *   基于 `FastMCP` 框架
@@ -1609,7 +1752,7 @@ POST {participant_endpoint}/api/kernel2/chat
 *   作为 LLM 的工具调用接口
 *   允许外部 LLM 通过 MCP 访问 Second Me 能力
 
-### 12.2 MCP Tool 定义
+### 16.2 MCP Tool 定义
 
 ```python
 @mindv.tool()
@@ -1624,9 +1767,13 @@ async def get_response(query: str) -> str:
 
 ---
 
-## 13. 配置管理系统 (Configuration Management)
+## 第五部分：工程实践 (Engineering Practices)
 
-### 13.1 配置类设计
+---
+
+## 17. 配置管理系统 (Configuration Management)
+
+### 17.1 配置类设计
 
 **单例模式** (`Config`):
 *   从 `.env` 文件加载配置
@@ -1646,7 +1793,7 @@ class Config:
     # ... 其他动态配置存储在 _extra_config
 ```
 
-### 13.2 用户 LLM 配置
+### 17.2 用户 LLM 配置
 
 **配置表** (`user_llm_configs`):
 *   **Chat 配置**: endpoint, api_key, model_name
@@ -1659,7 +1806,7 @@ class Config:
 
 ---
 
-## 14. 部署架构 (Deployment Architecture)
+## 18. 部署架构 (Deployment Architecture)
 
 ### 14.1 Docker Compose 部署
 
@@ -1702,7 +1849,7 @@ services:
 
 ---
 
-## 15. 错误处理与日志系统 (Error Handling & Logging)
+## 19. 错误处理与日志系统 (Error Handling & Logging)
 
 ### 15.1 日志架构
 
@@ -1736,7 +1883,7 @@ except Exception as e:
 
 ---
 
-## 16. 性能优化策略 (Performance Optimization)
+## 20. 性能优化策略 (Performance Optimization)
 
 ### 16.1 推理优化
 
@@ -1771,7 +1918,7 @@ except Exception as e:
 
 ---
 
-## 17. 安全与隐私增强 (Security & Privacy Enhancements)
+## 21. 安全与隐私增强 (Security & Privacy Enhancements)
 
 ### 17.1 数据隔离
 
@@ -1788,7 +1935,7 @@ except Exception as e:
 
 ---
 
-## 18. 扩展性设计 (Extensibility)
+## 22. 扩展性设计 (Extensibility)
 
 ### 18.1 插件化架构
 
@@ -1811,6 +1958,10 @@ except Exception as e:
 *   `BaseVectorRepository` 抽象基类
 *   当前实现: `ChromaRepository`
 *   架构设计支持扩展其他向量数据库实现
+
+---
+
+## 第六部分：参考与示例 (References & Examples)
 
 ---
 
