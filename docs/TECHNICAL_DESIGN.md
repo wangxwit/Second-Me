@@ -575,15 +575,63 @@ erDiagram
 
    **Preference 数据生成**:
    ```python
-   preference_generator = PreferenceQAGenerator(...)
+   # Step 1: 初始化 PreferenceQAGenerator（读取 topics.json）
+   preference_generator = PreferenceQAGenerator(
+       filename=topics_path,  # topics.json 路径（来自 L1 Cluster Topics）
+       bio=global_bio,       # 全局 Bio
+       preference_language="English",
+       is_cot=True
+   )
    
-   # Step 1: 基于用户的 Shade 生成偏好表达
-   for shade in shade_list:
-       # 分析 Shade 相关的记忆，生成偏好
-       preference = preference_generator.generate_preference(
-           shade=shade,
-           related_notes=shade.cluster.memory_list
+   # Step 2: 处理 Cluster 数据（topics.json 包含多个 Cluster）
+   # topics.json 格式：
+   # {
+   #   "cluster_0": {
+   #     "topic": "Python programming",
+   #     "tags": ["Python", "Programming"],
+   #     "contents": [Note1内容, Note2内容, ...]
+   #   },
+   #   ...
+   # }
+   
+   # Step 3: 根据数据合成模式采样 Cluster
+   # - Low: 采样 1/3 的 Cluster
+   # - Medium: 采样 1/2 的 Cluster
+   # - High: 使用所有 Cluster
+   
+   # Step 4: 为每个 Cluster 生成问答对
+   for cluster_id, cluster in sampled_clusters.items():
+       # 拼接 Cluster 中所有 Note 的内容
+       chunks_concat = "\n\n".join(cluster["contents"])
+       
+       # 生成问题（基于 Bio + Cluster 内容）
+       question = preference_generator.generate_response(
+           sys_question,
+           prompt_question_template.format(
+               bio=global_bio,
+               chunks_concat=chunks_concat
+           )
        )
+       # 示例问题："What are my preferences regarding Python programming?"
+       
+       # 生成答案（基于问题 + Bio + Cluster 内容）
+       answer = preference_generator.generate_response(
+           sys_answer,
+           prompt_answer_template.format(
+               question=question,
+               bio=global_bio,
+               chunks_concat=chunks_concat
+           )
+       )
+       # 示例答案："Based on your notes, you prefer Python for..."
+       
+       # 如果 Cluster ≥20 个 Note，会生成多个问答对
+       if len(cluster["contents"]) >= 20:
+           # 随机选择 30 个 Note，重复生成
+           ...
+   
+   # Step 5: 保存为 preference.json
+   preference_generator.process_clusters(preference_output_path)
    ```
    **示例结果**: 见 [附录 C.3.2 Preference 数据格式](#c32-训练数据生成阶段)
 
