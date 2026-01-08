@@ -416,7 +416,30 @@ erDiagram
    ```python
    json_to_txt_each(subjective_notes_remade, output_dir="subjective")
    ```
-   **示例结果** (`subjective/note_1.txt`):
+   
+   **这一步的作用**:
+   - **目的**: GraphRAG 工具需要读取**文本文件**来提取实体和关系，而不是 JSON 格式
+   - **操作**: 将每个 Note 对象转换为一个独立的 `.txt` 文本文件
+   - **文件命名**: `note_0.txt`, `note_1.txt`, `note_2.txt` ...（按索引编号）
+   - **文件内容**: 直接写入 Note 的 `processed` 字段（已在 Step 2 中格式化好的文本）
+   
+   **转换过程**:
+   ```python
+   # 输入: Note 对象列表（JSON 格式）
+   [
+       Note(id=1, processed="Alex recorded the following data: {...}", ...),
+       Note(id=2, processed="Here is the data recorded by Alex: {...}", ...),
+       ...
+   ]
+   
+   # 输出: 多个文本文件
+   # subjective/note_0.txt
+   # subjective/note_1.txt
+   # subjective/note_2.txt
+   # ...
+   ```
+   
+   **示例结果** (`subjective/note_0.txt`):
    ```
    Alex recorded the following data: {
        "Title": "Python 装饰器学习",
@@ -430,6 +453,15 @@ erDiagram
    }
    The topic of this data is: Python 学习笔记. More specifically:
    ```
+   
+   **为什么需要这一步？**
+   - GraphRAG 是一个**文档索引工具**，它需要读取**纯文本文件**来：
+     1. 分析文本内容
+     2. 提取实体（如 "Python"、"装饰器"）
+     3. 识别实体之间的关系（如 "Python" 和 "装饰器" 的关系）
+     4. 构建知识图谱
+   - JSON 格式虽然结构化，但 GraphRAG 无法直接处理，需要转换为文本文件
+   - 每个 Note 生成一个独立的文本文件，便于 GraphRAG 按文件处理和分析
 
    **Step 4: GraphRAG 索引（提取实体和关系）**
    ```python
