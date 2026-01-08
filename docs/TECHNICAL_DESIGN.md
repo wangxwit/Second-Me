@@ -553,37 +553,49 @@ erDiagram
    **SelfQA 数据生成**:
    ```python
    # Step 1: 初始化 SelfQA 生成器（不需要 note_list）
+   # 实际调用：L2DataProcessor._gen_selfqa_data()
    selfqa_generator = SelfQA(
-       user_name=basic_info["username"],
-       user_input_introduction=basic_info["aboutMe"],  # 用户自己输入的介绍
-       user_global_bio=basic_info["globalBio"],        # 全局 Bio（包含所有 Shade 摘要）
-       preferred_language="English",
-       is_cot=True  # 使用 CoT 模式
+       user_name=user_name,
+       user_input_introduction=user_intro,      # 用户自己输入的介绍（aboutMe）
+       user_global_bio=global_bio,              # 全局 Bio（包含所有 Shade 摘要）
+       preferred_language=self.preferred_lang,  # "English" 或 "Chinese"
+       # is_cot 参数未传递，使用默认值 True
    )
    
    # Step 2: 生成问答对（问题列表在内部自动生成）
    # 问题包括：
    # - 自我认知问题："Who am I?", "How would you describe who I am?", ...
    # - 用户绑定问题："Have you heard of {user_name} before?", ...
+   # 问题数量根据数据合成模式采样：
+   # - Low: 采样 1/3 的问题
+   # - Medium: 采样 1/2 的问题
+   # - High: 使用所有问题
    q_a_list = selfqa_generator.generate_qa()
    # 返回格式：[{"user": "Who am I?", "assistant": "..."}, ...]
    
-   # 注意：SelfQA 不使用 note_list，只使用压缩后的 global_bio
-   # 上下文长度较短，因为 global_bio 是高度压缩的总结
+   # Step 3: 保存为 selfqa.json
+   with open(output_path, "w", encoding="utf-8") as f:
+       json.dump(q_a_list, f, ensure_ascii=False, indent=4)
+   
+   # 注意：
+   # - SelfQA 不使用 note_list，只使用压缩后的 global_bio
+   # - 上下文长度较短，因为 global_bio 是高度压缩的总结
+   # - 问题列表是硬编码的，不支持动态配置
    ```
    **示例结果**: 见 [附录 C.3.2 SelfQA 数据格式](#c32-训练数据生成阶段)
 
    **Preference 数据生成**:
    ```python
    # Step 1: 初始化 PreferenceQAGenerator（读取 topics.json）
+   # 实际调用：L2DataProcessor._gen_preference_data()
    preference_generator = PreferenceQAGenerator(
-       filename=topics_path,  # topics.json 路径（来自 L1 Cluster Topics）
-       bio=global_bio,       # 全局 Bio
-       preference_language="English",
-       is_cot=True
+       filename=topics_path,                    # topics.json 路径（来自 L1 Cluster Topics）
+       bio=global_bio,                          # 全局 Bio
+       preference_language=self.preferred_lang, # "English" 或 "Chinese"
+       # is_cot 参数未传递，使用默认值 True
    )
    
-   # Step 2: 处理 Cluster 数据（topics.json 包含多个 Cluster）
+   # Step 2: 读取 topics.json（在 __init__ 中自动完成）
    # topics.json 格式：
    # {
    #   "cluster_0": {
@@ -594,15 +606,25 @@ erDiagram
    #   ...
    # }
    
-   # Step 3: 根据数据合成模式采样 Cluster
-   # - Low: 采样 1/3 的 Cluster
-   # - Medium: 采样 1/2 的 Cluster
-   # - High: 使用所有 Cluster
+   # Step 3: 处理 Cluster 数据（process_clusters 方法）
+   # 3.1: 根据数据合成模式采样 Cluster
+   cluster_items = list(self.pre_msg.items())
+   if self.data_synthesis_mode == "low":
+       sample_num = len(cluster_items) // 3
+       new_cluster_items = random.sample(cluster_items, sample_num)
+   elif self.data_synthesis_mode == "medium":
+       sample_num = len(cluster_items) // 2
+       new_cluster_items = random.sample(cluster_items, sample_num)
+   else:  # high
+       new_cluster_items = cluster_items
    
-   # Step 4: 为每个 Cluster 生成问答对
-   for cluster_id, cluster in sampled_clusters.items():
+   # 3.2: 为每个 Cluster 生成问答对
+   for cluster_id, cluster in new_cluster_items:
        # 拼接 Cluster 中所有 Note 的内容
        chunks_concat = "\n\n".join(cluster["contents"])
+       
+       if len(chunks_concat) < 20:  # 跳过内容太短的 Cluster
+           continue
        
        # 生成问题（基于 Bio + Cluster 内容）
        question = preference_generator.generate_response(
@@ -612,6 +634,7 @@ erDiagram
                chunks_concat=chunks_concat
            )
        )
+       # 如果使用 CoT，需要从 <question>...</question> 标签中提取
        # 示例问题："What are my preferences regarding Python programming?"
        
        # 生成答案（基于问题 + Bio + Cluster 内容）
@@ -625,12 +648,15 @@ erDiagram
        )
        # 示例答案："Based on your notes, you prefer Python for..."
        
+       self.question_list.append({"user": question, "assistant": answer})
+       
        # 如果 Cluster ≥20 个 Note，会生成多个问答对
        if len(cluster["contents"]) >= 20:
            # 随机选择 30 个 Note，重复生成
+           # 调用 _generate_multiple_questions() 方法
            ...
    
-   # Step 5: 保存为 preference.json
+   # Step 4: 保存为 preference.json
    preference_generator.process_clusters(preference_output_path)
    ```
    **示例结果**: 见 [附录 C.3.2 Preference 数据格式](#c32-训练数据生成阶段)
@@ -638,9 +664,10 @@ erDiagram
    **Diversity 数据生成**:
    ```python
    # Step 1: 初始化 DiversityDataGenerator
+   # 实际调用：L2DataProcessor._gen_diversity_data()
    diversity_generator = DiversityDataGenerator(
-       preference_language="English",
-       is_cot=True
+       preference_language=self.preferred_lang,  # "English" 或 "Chinese"
+       # is_cot 参数未传递，使用默认值 True
    )
    
    # Step 2: 预处理数据（读取实体、Note、配置）
@@ -665,12 +692,16 @@ erDiagram
              for item in QA_config["query"]}
    # q_dict 示例：
    # {
-   #   "factual": {"weight": 0.3, "prompt": "..."},
-   #   "analytical": {"weight": 0.4, "prompt": "..."},
-   #   "creative": {"weight": 0.3, "prompt": "..."},
-   #   "global": {"weight": 0.1, "prompt": "..."},
-   #   "unanswerable": {"weight": 0.1, "prompt": "..."}
+   #   "factual": {"weight": 0.3, "prompt": "Generate factual questions..."},
+   #   "analytical": {"weight": 0.4, "prompt": "Generate analytical questions..."},
+   #   "creative": {"weight": 0.3, "prompt": "Generate creative questions..."},
+   #   "global": {"weight": 0.1, "prompt": "Generate global questions..."},
+   #   "unanswerable": {"weight": 0.1, "prompt": "Generate unanswerable questions..."}
    # }
+   # 注意：
+   # - 问题类型（factual/analytical/creative 等）是内置的（从配置文件读取）
+   # - 但具体的问题内容是通过 LLM 动态生成的，不是硬编码的
+   # - 每个问题类型有对应的 prompt 描述，LLM 根据这个描述和实体信息生成具体问题
    
    # Step 4: 根据实体关联的 Note 数量分类 Cluster
    entity2desc_list = [{**{"entity_name": k}, **v} for k, v in entity2desc.items()]
@@ -694,82 +725,83 @@ erDiagram
        ["PERSON", "人", "组织", "ORGANIZATION", "人物"]
    ]
    
-   # Step 5: 为不同类型的 Cluster 生成数据
-   # 5.1: 大 Cluster 生成
-   data_large = diversity_generator._pipline(
-       exploded_clusters, 
-       aug_para=DataSynthesisMode["LOW"].value["large_aug_para"],  # 1/2/4
-       q_dict=q_dict,
-       templater=templater,
-       language_desc="Keep your response in English",
-       user_name=user_name
+   # Step 5: 创建 templater（用于生成问题和答案模板）
+   templater = template_diversity.templater(
+       q_dict, a_dict, user_name, global_bio, self.is_cot
    )
    
-   # 5.2: 中等 Cluster 生成
-   data_mini = diversity_generator._pipline(
-       mini_clusters,
-       aug_para=DataSynthesisMode["LOW"].value["mini_aug_para"],  # 1/2/2
-       q_dict=q_dict,
-       ...
-   )
+   # Step 6: 为不同类型的 Cluster 生成数据（调用 _pipline 方法）
+   # _pipline 方法内部流程：
+   # 6.0.1: 扩展 Cluster（根据 aug_para 重复）
+   #        explode_clusters.extend([item] * aug_para)
+   # 6.0.2: 根据权重随机选择问题类型
+   #        weights = [v["weight"] for v in q_dict.values()]
+   #        random_types = random.choices(list(q_dict.keys()), weights, k=aug_para)
+   # 6.0.3: 并行生成问题（_Q_generate，每个 Cluster 生成 2-4 个问题）
+   #        - 输入：实体信息 + 关联的 Note 内容（Title, Content, Insight）
+   #        - System Prompt：包含问题类型要求（factual/analytical/creative 等）
+   #        - LLM 返回："Question 1: xxx||Question 2: xxx||Question 3: xxx"
+   #        - 解析后：["Question 1: xxx", "Question 2: xxx", "Question 3: xxx"]
+   # 6.0.4: 并行生成答案（_A_generate，为每个问题生成答案）
+   #        - 输入：问题 + 实体信息 + 关联的 Note 内容（processed 或 content）
+   #        - System Prompt：包含答案类型要求（requiredAnswerTypes, optionalAnswerTypes）
+   #        - 如果使用 CoT：返回格式包含 <think>...</think><answer>...</answer>
+   # 6.0.5: 组装数据并返回
+   #        - 格式：{"user": question, "assistant": answer, "entity_name": ..., "question_type": ..., "answer_type": ..., "doc_id": [...]}
    
-   # 5.3: 小 Cluster 生成（移除 unanswerable 和 global 类型）
-   q_dict_filtered = q_dict.copy()
-   q_dict_filtered.pop("unanswerable")
-   q_dict_filtered.pop("global")
-   data_tiny = diversity_generator._pipline(
-       filtered_tiny_clusters,
-       aug_para=DataSynthesisMode["LOW"].value["tiny_aug_para"],  # 1/2/3
-       q_dict=q_dict_filtered,
-       ...
-   )
-   
-   # Step 6: 生成问答对的核心流程（_pipline 方法）
-   # 6.1: 扩展 Cluster（根据 aug_para 重复）
-   explode_clusters = []
-   explode_questions_types = []
-   for item in clusters:
-       explode_clusters.extend([item] * aug_para)  # 重复 aug_para 次
-       # 根据权重随机选择问题类型
-       weights = [v["weight"] for v in q_dict.values()]
-       random_types = random.choices(list(q_dict.keys()), weights, k=aug_para)
-       explode_questions_types.extend(random_types)
-   
-   # 6.2: 并行生成问题
-   for cluster, question_type in zip(explode_clusters, explode_questions_types):
-       # 构建问题生成输入
-       user_input = f"""For Entity'{cluster["entity_name"]}'：{cluster["entity_description"]}, 
-       here is the relevant content from my interactions:
-       # Content 1 #
-       Title: {note1.title}
-       Content: {note1.content}
-       AI Insight: {note1.insight}
-       ...
-       Please help me generate questions; note that you need to phrase them from my perspective."""
-       
-       # 调用 LLM 生成问题（2-4 个问题）
-       questions = diversity_generator._Q_generate(
-           cluster, question_type, templater, q_dict, language_desc, user_name
+   # 6.1: 大 Cluster 生成
+   if len(exploded_clusters) > 0:
+       data_large = diversity_generator._pipline(
+           exploded_clusters, 
+           aug_para=DataSynthesisMode[self.data_synthesis_mode.upper()].value["large_aug_para"],
+           # Low: 1, Medium: 2, High: 4
+           q_dict=q_dict,
+           templater=templater,
+           language_desc=f"Keep your response in {self.preferred_language}",
+           user_name=user_name
        )
-       # 返回格式："Question 1: xxx||Question 2: xxx||Question 3: xxx"
+   else:
+       data_large = []
    
-   # 6.3: 并行生成答案
-   for cluster, question, question_type in zip(flat_clusters, questions, flat_question_types):
-       # 构建答案生成输入
-       user_input = f"""I am {user_name}. Regarding Entity'{cluster["entity_name"]}', 
-       here is some information I previously mentioned:
-       {note1.processed or note1.content}
-       ...
-       Based on the information I have previously recorded, please answer '{question}'."""
-       
-       # 调用 LLM 生成答案
-       answer, answer_type = diversity_generator._A_generate(
-           cluster, question, question_type, templater, language_desc, user_name
+   # 6.2: 中等 Cluster 生成
+   if len(mini_clusters) > 0:
+       data_mini = diversity_generator._pipline(
+           mini_clusters,
+           aug_para=DataSynthesisMode[self.data_synthesis_mode.upper()].value["mini_aug_para"],
+           # Low: 1, Medium: 2, High: 2
+           q_dict=q_dict,
+           templater=templater,
+           language_desc=f"Keep your response in {self.preferred_language}",
+           user_name=user_name
        )
-       # 如果使用 CoT：返回格式包含 <think>...</think><answer>...</answer>
+   else:
+       data_mini = []
+   
+   # 6.3: 小 Cluster 生成（移除 unanswerable 和 global 类型）
+   if len(filtered_tiny_clusters) > 0:
+       q_dict_filtered = q_dict.copy()
+       q_dict_filtered.pop("unanswerable")
+       q_dict_filtered.pop("global")
+       data_tiny = diversity_generator._pipline(
+           filtered_tiny_clusters,
+           aug_para=DataSynthesisMode[self.data_synthesis_mode.upper()].value["tiny_aug_para"],
+           # Low: 1, Medium: 2, High: 3
+           q_dict=q_dict_filtered,
+           templater=templater,
+           language_desc=f"Keep your response in {self.preferred_language}",
+           user_name=user_name
+       )
+   else:
+       data_tiny = []
    
    # Step 7: 合并所有数据并保存
    combined_list = data_large + data_mini + data_tiny
+   total_entries = len(combined_list)
+   
+   # 保存为 diversity.json
+   with open(output_path, "w", encoding="utf-8") as f:
+       json.dump(combined_list, f, ensure_ascii=False, indent=4)
+   
    # 输出格式：
    # [
    #   {
@@ -787,14 +819,27 @@ erDiagram
 
 3. **合并训练数据**
    ```python
+   # 实际调用：L2DataProcessor.gen_subjective_data() 内部
    # 合并所有 JSON 文件
    merged_data = []
-   merged_data.extend(load_json("selfqa.json"))
-   merged_data.extend(load_json("preference.json"))
-   merged_data.extend(load_json("diversity.json"))
+   json_files_to_merge = [
+       preference_output_path,  # preference.json
+       diversity_output_path,    # diversity.json
+       selfqa_output_path,       # selfqa.json
+   ]
+   # 如果启用 context 数据生成，还会包含 context_merged.json
+   
+   for file_path in json_files_to_merge:
+       if file_path and os.path.exists(file_path):
+           with open(file_path, 'r', encoding='utf-8') as f:
+               file_data = json.load(f)
+               if isinstance(file_data, list):
+                   merged_data.extend(file_data)
    
    # 保存为 merged.json（用于训练）
-   save_json("merged.json", merged_data)
+   merged_output_path = os.path.join(data_output_base_dir, "merged.json")
+   with open(merged_output_path, 'w', encoding='utf-8') as f:
+       json.dump(merged_data, f, ensure_ascii=False, indent=2)
    ```
    **示例结果**: 见 [附录 C.3.3 合并训练数据格式](#c33-合并训练数据格式)
 
