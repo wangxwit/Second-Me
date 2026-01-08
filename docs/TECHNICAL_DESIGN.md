@@ -77,8 +77,8 @@
 ### 2.1 核心功能矩阵
 | 功能模块 | 核心能力描述 | 用户价值 |
 | :--- | :--- | :--- |
-| **记忆胶囊 (Memory Capsule)** | 全模态摄入 (文本/图片/音频/链接)，自动生成情感化摘要与深度洞察。 | 消除碎片化信息的焦虑，将生活点滴转化为结构化、可检索的知识资产。 |
-| **数字分身 (AI Avatar)** | 基于 RAG +微调的动态人格，随记忆增加而自动进化。 | 获得一个“懂你”的镜像伴侣，提供深度的共情与思维共鸣，而非机械问答。 |
+| **记忆胶囊 (Memory Capsule)** | 全模态摄入 (文本/图片/音频/文档)，自动生成情感化摘要与深度洞察。支持文件上传和 URL 链接。 | 消除碎片化信息的焦虑，将生活点滴转化为结构化、可检索的知识资产。 |
+| **数字分身 (AI Avatar)** | 基于 RAG（L0/L1 检索）+ 微调（L2 训练）的动态人格，随记忆增加而自动进化。RAG 部分通过 L0/L1 向量检索获取事实和身份信息，微调部分通过 L2 训练将用户偏好内化为模型权重。 | 获得一个"懂你"的镜像伴侣，提供深度的共情与思维共鸣，而非机械问答。 |
 | **思维可视化 (Mind Sphere)** | 3D 动态球体背景动画，提供沉浸式的视觉体验。当前使用演示数据，未来可接入真实记忆数据实现记忆节点的可视化。 | 增强界面的视觉吸引力，营造科技感的用户体验。 |
 | **专家协同 (Expert Mode)** | 支持创建自定义角色（Role），每个角色可配置专属的 System Prompt 和知识检索策略。高级对话模式使用更强的模型进行多阶段处理。 | 通过角色定制和高级对话模式，提升复杂问题的解决质量。 |
 | **自我进化 (Evolution)** | 一键触发 L2 训练循环，将近期的高频记忆内化为模型的直觉。 | 让 AI 越用越聪明，且这种“聪明”是基于用户独特经验的完全定制。 |
@@ -662,9 +662,26 @@ AI 产生“自我意识”的关键算法：
 *   **差异度 (Cosine Distance)**: 与现有画像差异大的新行为被标记为“人格演变”。
 
 ### 7.4 双路检索推理 (Dual-Retrieval Inference)
-1.  **L1 通道 (Facts)**: 向量检索 "What/When/Where"。
-2.  **L2 通道 (Vibe)**: 身份加载 "How/Why" (语气、态度)。
-3.  **Synthesis**: 在 Prompt 中融合事实与人格。
+
+系统通过 **L0 检索** 和 **L1 检索** 两个通道并行获取知识，实现事实与身份的融合：
+
+1.  **L0 通道 (Facts)**: 向量检索文档片段（Chunks），获取 "What/When/Where" 等事实信息。
+   - 检索来源：ChromaDB `document_chunks` 集合
+   - 相似度阈值：默认 0.7
+   - 最大返回数：默认 3 个片段
+   - 实现：`L0KnowledgeRetriever.retrieve()`
+
+2.  **L1 通道 (Identity)**: 向量检索身份侧影（Shades），获取 "How/Why" 等身份和偏好信息。
+   - 检索来源：Global Bio 中的 Shade 列表
+   - 相似度阈值：默认 0.7
+   - 最大返回数：默认 3 个 Shade
+   - 实现：`L1KnowledgeRetriever.retrieve()`
+
+3.  **Synthesis**: 在 Prompt 中融合 L0 事实与 L1 身份，构建增强的上下文。
+   - 实现：`KnowledgeEnhancedStrategy.build_prompt()`
+   - 根据 `enable_l0_retrieval` 和 `enable_l1_retrieval` 参数动态启用/禁用检索
+
+**注意**: L2 层是训练后的模型权重，不是检索机制。L2 的影响通过使用训练后的模型来实现，而非检索。
 
 ### 7.5 专家协同机制 (Expert Mode)
 
@@ -1012,10 +1029,15 @@ if is_cot:
 基于 `lpm_kernel/api/domains/kernel2`，实现了复杂的 **上下文编排 (Context Orchestration)**。
 
 ### 10.1 执行流与时序
-1.  **Query Analysis**: 解析用户意图。
-2.  **Dual Retrieval**: 并行获取 L1 事实与 L2 设定。
+1.  **Query Analysis**: 解析用户意图（从 `ChatRequest.message` 提取）。
+2.  **Dual Retrieval**: 并行获取 L0 事实与 L1 身份侧影（如果启用检索）。
+   - L0 检索：从 ChromaDB 检索相关文档片段
+   - L1 检索：从 Global Bio 检索相关 Shade
 3.  **Context Assembly (Augmented Prompt)**: 组装增强提示词。
-4.  **Streaming Inference**: 调用 Ollama/MLX。
+   - 基础 System Prompt（`BasePromptStrategy`）
+   - 角色 System Prompt（`RoleBasedStrategy`，如果指定角色）
+   - 知识增强（`KnowledgeEnhancedStrategy`，如果启用检索）
+4.  **Streaming Inference**: 调用本地 LLM（Ollama/MLX）或专家模型（Expert Mode）。
 
 **高级对话 Prompt 策略流 (Strategy Chain)**:
 ```mermaid
