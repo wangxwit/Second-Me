@@ -552,27 +552,24 @@ erDiagram
 
    **SelfQA 数据生成**:
    ```python
+   # Step 1: 初始化 SelfQA 生成器（不需要 note_list）
    selfqa_generator = SelfQA(
        user_name=basic_info["username"],
-       user_global_bio=basic_info["globalBio"],
+       user_input_introduction=basic_info["aboutMe"],  # 用户自己输入的介绍
+       user_global_bio=basic_info["globalBio"],        # 全局 Bio（包含所有 Shade 摘要）
+       preferred_language="English",
        is_cot=True  # 使用 CoT 模式
    )
    
-   # Step 1: 生成问题列表
-   questions = [
-       "Who am I?",
-       "How would you describe who I am?",
-       "What makes me, me?",
-       ...
-   ]
+   # Step 2: 生成问答对（问题列表在内部自动生成）
+   # 问题包括：
+   # - 自我认知问题："Who am I?", "How would you describe who I am?", ...
+   # - 用户绑定问题："Have you heard of {user_name} before?", ...
+   q_a_list = selfqa_generator.generate_qa()
+   # 返回格式：[{"user": "Who am I?", "assistant": "..."}, ...]
    
-   # Step 2: 基于用户的 Bio 和记忆生成回答
-   for question in questions:
-       answer = selfqa_generator.generate_answer(
-           question=question,
-           user_bio=global_bio,
-           user_memories=note_list
-       )
+   # 注意：SelfQA 不使用 note_list，只使用压缩后的 global_bio
+   # 上下文长度较短，因为 global_bio 是高度压缩的总结
    ```
    **示例结果**: 见 [附录 C.3.2 SelfQA 数据格式](#c32-训练数据生成阶段)
 
