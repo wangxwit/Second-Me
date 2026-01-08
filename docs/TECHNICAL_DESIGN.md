@@ -1030,6 +1030,93 @@ if is_cot:
 
 ---
 
+## 8. 数据流转与训练架构 (Data & Training Pipeline)
+
+> **注意**: 本章节描述数据流转和训练的整体架构，具体的数据生成流程见 [9. L0/L1/L2 数据生成流程](#9-l0l1l2-数据生成流程-data-generation-pipeline)
+
+### 8.1 数据模型 (Data Schema)
+
+L2 训练使用的数据来自 L1 层的结构化记忆，形成一个层次化的数据金字塔：
+
+*   **Note**: 基础原子单元
+    - **内容**: 原始记忆内容（文本、图片、音频等）
+    - **嵌入**: 向量表示（Embedding），用于语义检索
+    - **作用**: 训练数据的最小单元，包含用户的具体记忆片段
+
+*   **Cluster**: 语义聚类
+    - **内容**: 多个相关 Note 的集合
+    - **主题**: Cluster 的主题描述（如 "Python 学习"）
+    - **作用**: 将相关记忆组织在一起，便于生成主题相关的训练数据
+
+*   **Shade**: 人格侧影
+    - **内容**: 用户的某个兴趣领域或身份侧面（如 "Python 专家"）
+    - **置信度**: Shade 的置信度（HIGH/MEDIUM/LOW）
+    - **作用**: 用于生成偏好相关的训练数据（Preference 数据）
+
+*   **Bio**: 全局传记
+    - **内容**: 用户的完整人格画像，包含所有 Shade
+    - **作用**: 用于生成 SelfQA 数据，回答 "Who am I?" 等问题
+
+### 8.2 训练状态机 (Training FSM)
+
+训练过程通过状态机管理，确保资源正确分配和流程有序执行：
+
+**状态流转**:
+```
+DataSynthesis → ReleaseVRAM → LoadModel → Training → MergeAdapter → Reload
+```
+
+**各状态说明**:
+1. **DataSynthesis**: 数据合成阶段
+   - 调用 `L2Generator.gen_subjective_data()` 生成训练数据
+   - 包括 SelfQA、Preference、Diversity 三种类型的数据
+   - 输出：`merged.json`（合并后的训练数据）
+
+2. **ReleaseVRAM**: 释放显存阶段
+   - 如果使用 CUDA，释放推理模型的显存
+   - 为训练模型腾出空间
+
+3. **LoadModel**: 加载模型阶段
+   - 加载基础模型（如 Qwen2.5-7B）
+   - 应用 LoRA 配置（如果使用 LoRA）
+
+4. **Training**: 训练阶段
+   - 使用 `SFTTrainer` 进行监督微调
+   - 支持 LoRA 和全量微调两种模式
+   - 训练过程中定期保存检查点
+
+5. **MergeAdapter**: 合并适配器阶段（仅 LoRA 模式）
+   - 将 LoRA 权重合并到基础模型
+   - 生成完整的微调模型
+
+6. **Reload**: 重新加载阶段
+   - 重新加载训练后的模型
+   - 准备用于推理
+
+**实现位置**: `lpm_kernel/api/domains/trainprocess/trainprocess_service.py`
+
+---
+
+## 9. L0/L1/L2 数据生成流程 (Data Generation Pipeline)
+
+本章节详细说明 L0、L1、L2 各层数据的具体生成过程，包含完整的代码示例和结果展示。
+
+### 9.1 L0 数据生成流程
+
+见 [6.1 L0: 感官与洞察层](#61-l0-感官与洞察层-sensory--insight) 和 [附录 C.1](#c1-l0-层数据格式示例)
+
+### 9.2 L1 数据生成流程
+
+见 [6.2 L1: 身份与结构层](#62-l1-身份与结构层-identity--structure) 和 [附录 C.2](#c2-l1-层数据格式示例)
+
+### 9.3 L2 数据生成流程
+
+见 [6.3 L2: 进化与合成层](#63-l2-进化与合成层-evolution--soul) 和 [附录 C.3](#c3-l2-层数据格式示例)
+
+---
+
+## 10. 在线推理服务架构 (Online Inference Service)
+
 基于 `lpm_kernel/api/domains/kernel2`，实现了复杂的 **上下文编排 (Context Orchestration)**。
 
 ### 10.1 执行流与时序
