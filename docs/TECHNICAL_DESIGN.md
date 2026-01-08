@@ -362,24 +362,122 @@ erDiagram
 **处理流程**:
 
 1. **数据预处理** (`L2DataProcessor`)
+
+   **Step 1: 按类型分离 Note**
    ```python
-   # Step 1: 按类型分离 Note
    subjective_notes, objective_notes = split_notes_by_type(note_list)
+   ```
+   **示例结果**:
+   ```python
+   # subjective_notes: 包含用户主观记忆的 Note 列表
+   [
+       Note(id=1, content="今天学习了 Python 装饰器...", memory_type="SUBJECTIVE"),
+       Note(id=2, content="阅读了《深度学习入门》...", memory_type="SUBJECTIVE"),
+       ...
+   ]
    
-   # Step 2: 数据精炼
+   # objective_notes: 包含客观事实的 Note 列表
+   [
+       Note(id=10, content="Python 3.12 发布了新特性...", memory_type="OBJECTIVE"),
+       ...
+   ]
+   ```
+
+   **Step 2: 数据精炼**
+   ```python
    subjective_notes_remade = refine_notes_data_subjective(subjective_notes)
    objective_notes_remade = refine_notes_data_objective(objective_notes)
-   
-   # Step 3: 转换为文本格式（用于 GraphRAG）
+   ```
+   **示例结果** (`subjective/note_remade.json`):
+   ```json
+   [
+       {
+           "id": 1,
+           "title": "Python 学习笔记",
+           "content": "今天学习了 Python 装饰器...",
+           "insight": {
+               "Title": "Python 装饰器学习",
+               "Overview": "用户学习了 Python 装饰器的基本概念...",
+               "Breakdown": {
+                   "🎯核心概念": [
+                       ["装饰器定义", "装饰器是 Python 的高级特性..."],
+                       ["使用场景", "用于函数增强和代码复用..."]
+                   ]
+               }
+           },
+           "processed": "Alex recorded the following data: {\"Title\": \"Python 装饰器学习\", ...} The topic of this data is: Python 学习笔记. More specifically:",
+           "create_time": "2024-01-15"
+       },
+       ...
+   ]
+   ```
+
+   **Step 3: 转换为文本格式（用于 GraphRAG）**
+   ```python
    json_to_txt_each(subjective_notes_remade, output_dir="subjective")
-   json_to_txt_each(objective_notes_remade, output_dir="objective")
-   
-   # Step 4: GraphRAG 索引（提取实体和关系）
+   ```
+   **示例结果** (`subjective/note_1.txt`):
+   ```
+   Alex recorded the following data: {
+       "Title": "Python 装饰器学习",
+       "Overview": "用户学习了 Python 装饰器的基本概念...",
+       "Breakdown": {
+           "🎯核心概念": [
+               ["装饰器定义", "装饰器是 Python 的高级特性..."],
+               ["使用场景", "用于函数增强和代码复用..."]
+           ]
+       }
+   }
+   The topic of this data is: Python 学习笔记. More specifically:
+   ```
+
+   **Step 4: GraphRAG 索引（提取实体和关系）**
+   ```python
    graphrag_indexing(
        notes=subjective_notes_remade,
        output_dir="graphrag_indexing_output"
    )
-   # 输出: entities.json, topics.json, graph.json
+   ```
+   **示例结果** (`graphrag_indexing_output/entities.json`):
+   ```json
+   [
+       {
+           "entity_id": "entity_1",
+           "entity_name": "Python",
+           "entity_type": "TECHNOLOGY",
+           "entity_description": "Python is a high-level programming language...",
+           "doc_id": [1, 2, 5]
+       },
+       {
+           "entity_id": "entity_2",
+           "entity_name": "装饰器",
+           "entity_type": "CONCEPT",
+           "entity_description": "装饰器是 Python 的高级特性，用于函数增强...",
+           "doc_id": [1]
+       },
+       ...
+   ]
+   ```
+   **示例结果** (`graphrag_indexing_output/topics.json`):
+   ```json
+   [
+       {
+           "domain": "Python 编程",
+           "topics": [
+               "Python 装饰器的高级用法",
+               "Python 异步编程",
+               "Python 数据科学工具链"
+           ]
+       },
+       {
+           "domain": "机器学习",
+           "topics": [
+               "深度学习基础",
+               "神经网络架构设计",
+               "模型训练优化"
+           ]
+       }
+   ]
    ```
 
 2. **生成训练数据** (`L2Generator.gen_subjective_data`)
@@ -407,12 +505,20 @@ erDiagram
            user_bio=global_bio,
            user_memories=note_list
        )
-       # 如果启用 CoT，输出格式：
-       # <think>推理过程</think>
-       # <answer>最终回答</answer>
-   
-   # Step 3: 保存为 selfqa.json
-   # 格式: [{"user": "问题", "assistant": "回答"}, ...]
+   ```
+   **示例结果** (`selfqa.json`):
+   ```json
+   [
+       {
+           "user": "Who am I?",
+           "assistant": "<think>Based on the user's global biography and memories, Alex is a Python developer who is passionate about machine learning and data science. They have been learning Python decorators, reading about deep learning, and working on various programming projects. Their interests span from practical Python programming to theoretical machine learning concepts.</think><answer>I am Alex, a Python developer with a strong interest in machine learning and data science. I enjoy learning advanced Python features like decorators and exploring deep learning concepts. I'm someone who values both practical programming skills and theoretical understanding.</answer>"
+       },
+       {
+           "user": "How would you describe who I am?",
+           "assistant": "<think>From the user's memories and bio, I can see they are detail-oriented, enjoy learning new technologies, and have a systematic approach to learning. They document their learning process and reflect on their experiences.</think><answer>I would describe myself as a curious and methodical learner who enjoys diving deep into technical topics. I'm particularly drawn to Python programming and machine learning, and I like to document my learning journey. I value both hands-on practice and theoretical understanding.</answer>"
+       },
+       ...
+   ]
    ```
 
    **Preference 数据生成**:
@@ -426,9 +532,26 @@ erDiagram
            shade=shade,
            related_notes=shade.cluster.memory_list
        )
-       # 输出: {"preferred": "偏好选项", "rejected": "不偏好选项"}
-   
-   # Step 2: 保存为 preference.json
+   ```
+   **示例结果** (`preference.json`):
+   ```json
+   [
+       {
+           "user": "在 Python 编程中，你更倾向于哪种代码风格？",
+           "assistant": "我更喜欢使用装饰器来实现功能增强，而不是通过继承或修改原函数。装饰器让代码更加简洁和可复用，符合 Python 的哲学。",
+           "preferred": "使用装饰器实现功能增强",
+           "rejected": "通过继承或修改原函数实现功能增强",
+           "shade_name": "Python 专家"
+       },
+       {
+           "user": "在学习新技术时，你更倾向于哪种方式？",
+           "assistant": "我更喜欢先理解理论概念，然后通过实践项目来巩固。这种方式让我既能掌握原理，又能获得实际经验。",
+           "preferred": "理论先行，然后实践",
+           "rejected": "直接实践，遇到问题再查理论",
+           "shade_name": "学习者"
+       },
+       ...
+   ]
    ```
 
    **Diversity 数据生成**:
@@ -453,8 +576,36 @@ erDiagram
            entities=entities,
            question_types=question_types
        )
-   
-   # Step 2: 保存为 diversity.json
+   ```
+   **示例结果** (`diversity.json`):
+   ```json
+   [
+       {
+           "user": "Python 装饰器的主要用途是什么？",
+           "assistant": "Python 装饰器主要用于函数增强、代码复用和横切关注点的处理。例如，可以用装饰器实现日志记录、性能监控、权限检查等功能，而无需修改原函数代码。",
+           "question_type": "factual",
+           "answer_type": "factual",
+           "entity_name": "Python",
+           "doc_id": 1
+       },
+       {
+           "user": "如何设计一个既能记录日志又能测量性能的装饰器？",
+           "assistant": "可以设计一个组合装饰器，先应用性能测量装饰器，再应用日志记录装饰器。或者创建一个统一的装饰器，内部同时实现两种功能。关键是要保持装饰器的可组合性和单一职责原则。",
+           "question_type": "analytical",
+           "answer_type": "analytical",
+           "entity_name": "装饰器",
+           "doc_id": 1
+       },
+       {
+           "user": "如果让你设计一个全新的 Python 特性来替代装饰器，你会如何设计？",
+           "assistant": "我会设计一个基于函数组合的语法糖，允许在函数定义时直接声明增强功能。比如 `@enhance(log, timing)` 这样的语法，让增强逻辑更加直观和类型安全。",
+           "question_type": "creative",
+           "answer_type": "creative",
+           "entity_name": "Python",
+           "doc_id": 1
+       },
+       ...
+   ]
    ```
 
 3. **合并训练数据**
@@ -468,21 +619,28 @@ erDiagram
    # 保存为 merged.json（用于训练）
    save_json("merged.json", merged_data)
    ```
-
-**输出**: `merged.json` 训练数据文件
-```json
-[
-    {
-        "user": "Who am I?",
-        "assistant": "<think>基于用户的记忆...</think>\n<answer>我是...</answer>"
-    },
-    {
-        "user": "问题",
-        "assistant": "回答"
-    },
-    ...
-]
-```
+   **示例结果** (`merged.json`):
+   ```json
+   [
+       {
+           "user": "Who am I?",
+           "assistant": "<think>Based on the user's global biography and memories, Alex is a Python developer...</think><answer>I am Alex, a Python developer with a strong interest in machine learning...</answer>"
+       },
+       {
+           "user": "在 Python 编程中，你更倾向于哪种代码风格？",
+           "assistant": "我更喜欢使用装饰器来实现功能增强，而不是通过继承或修改原函数..."
+       },
+       {
+           "user": "Python 装饰器的主要用途是什么？",
+           "assistant": "Python 装饰器主要用于函数增强、代码复用和横切关注点的处理..."
+       },
+       {
+           "user": "如何设计一个既能记录日志又能测量性能的装饰器？",
+           "assistant": "可以设计一个组合装饰器，先应用性能测量装饰器，再应用日志记录装饰器..."
+       },
+       ...
+   ]
+   ```
 
 **数据格式转换**（训练前）:
 ```python
@@ -501,6 +659,32 @@ def create_chat_data(data_args, tokenizer):
     # 转换为 Dataset
     dataset = Dataset.from_dict({"text": [preprocess(s) for s in merged_data]})
     return dataset
+```
+**示例结果**（ChatML 格式）:
+```
+<|im_start|>system
+You are Alex's AI assistant. You have access to Alex's memories and personal information. 
+When answering questions, you should respond as Alex would, using first-person perspective.
+<|im_end|>
+<|im_start|>user
+Who am I?<|im_end|>
+<|im_start|>assistant
+<think>Based on the user's global biography and memories, Alex is a Python developer...</think>
+<answer>I am Alex, a Python developer with a strong interest in machine learning...</answer><|im_end|>
+```
+**示例结果**（训练 Dataset）:
+```python
+Dataset({
+    features: ['text'],
+    num_rows: 150,
+    data: {
+        'text': [
+            '<|im_start|>system\nYou are Alex\'s AI assistant...<|im_end|>\n<|im_start|>user\nWho am I?<|im_end|>\n<|im_start|>assistant\n<think>...</think><answer>...</answer><|im_end|>',
+            '<|im_start|>system\n...<|im_end|>\n<|im_start|>user\n在 Python 编程中，你更倾向于哪种代码风格？<|im_end|>\n<|im_start|>assistant\n我更喜欢使用装饰器来实现功能增强...<|im_end|>',
+            ...
+        ]
+    }
+})
 ```
 
 ---
