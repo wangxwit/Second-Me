@@ -637,26 +637,151 @@ erDiagram
 
    **Diversity 数据生成**:
    ```python
-   diversity_generator = DiversityDataGenerator(...)
+   # Step 1: 初始化 DiversityDataGenerator
+   diversity_generator = DiversityDataGenerator(
+       preference_language="English",
+       is_cot=True
+   )
    
-   # Step 1: 基于 Cluster 和实体生成多样化问答
-   for cluster in cluster_list:
-       # 从 GraphRAG 提取的实体
-       entities = load_entities(entities_path)
+   # Step 2: 预处理数据（读取实体、Note、配置）
+   # - entities_path: GraphRAG 提取的实体 JSON 文件
+   # - graph_path: GraphRAG 生成的实体 Parquet 文件（包含实体类型）
+   # - config_path: 问题类型配置文件（包含问题类型、权重、答案类型等）
+   # - note_list: 所有 Note 对象列表
+   entity2desc, entity2type, QA_config = diversity_generator._preprocess(
+       entities_path, note_list, config_path, graph_path, user_name
+   )
+   # entity2desc: {
+   #   "Python": {
+   #     "entity_description": "Python is a programming language...",
+   #     "doc_id": [1, 2, 3],
+   #     "note": [Note1对象, Note2对象, Note3对象]
+   #   },
+   #   ...
+   # }
+   
+   # Step 3: 从配置文件中读取问题类型和权重
+   q_dict = {item["type"]: {k: item[k] for k in item if k != "type"} 
+             for item in QA_config["query"]}
+   # q_dict 示例：
+   # {
+   #   "factual": {"weight": 0.3, "prompt": "..."},
+   #   "analytical": {"weight": 0.4, "prompt": "..."},
+   #   "creative": {"weight": 0.3, "prompt": "..."},
+   #   "global": {"weight": 0.1, "prompt": "..."},
+   #   "unanswerable": {"weight": 0.1, "prompt": "..."}
+   # }
+   
+   # Step 4: 根据实体关联的 Note 数量分类 Cluster
+   entity2desc_list = [{**{"entity_name": k}, **v} for k, v in entity2desc.items()]
+   
+   # 4.1: 大 Cluster（≥8 个 Note）- 拆分后生成
+   large_clusters = [item for item in entity2desc_list if len(item["note"]) >= 8]
+   # 拆分策略：
+   # - 每 4 个 Note 一组，生成一个子 Cluster
+   # - 额外生成全局数据：随机采样 10 个 Note，重复 len(note)//10+1 次
+   
+   # 4.2: 中等 Cluster（2-7 个 Note）
+   mini_clusters = [item for item in entity2desc_list 
+                    if 1 < len(item["note"]) < 8]
+   
+   # 4.3: 小 Cluster（≤1 个 Note，仅处理 PERSON/ORGANIZATION 类型）
+   tiny_clusters = [item for item in entity2desc_list 
+                    if len(item["note"]) <= 1]
+   filtered_tiny_clusters = [
+       d for d in tiny_clusters 
+       if entity2type.get(d["entity_name"], "") in 
+       ["PERSON", "人", "组织", "ORGANIZATION", "人物"]
+   ]
+   
+   # Step 5: 为不同类型的 Cluster 生成数据
+   # 5.1: 大 Cluster 生成
+   data_large = diversity_generator._pipline(
+       exploded_clusters, 
+       aug_para=DataSynthesisMode["LOW"].value["large_aug_para"],  # 1/2/4
+       q_dict=q_dict,
+       templater=templater,
+       language_desc="Keep your response in English",
+       user_name=user_name
+   )
+   
+   # 5.2: 中等 Cluster 生成
+   data_mini = diversity_generator._pipline(
+       mini_clusters,
+       aug_para=DataSynthesisMode["LOW"].value["mini_aug_para"],  # 1/2/2
+       q_dict=q_dict,
+       ...
+   )
+   
+   # 5.3: 小 Cluster 生成（移除 unanswerable 和 global 类型）
+   q_dict_filtered = q_dict.copy()
+   q_dict_filtered.pop("unanswerable")
+   q_dict_filtered.pop("global")
+   data_tiny = diversity_generator._pipline(
+       filtered_tiny_clusters,
+       aug_para=DataSynthesisMode["LOW"].value["tiny_aug_para"],  # 1/2/3
+       q_dict=q_dict_filtered,
+       ...
+   )
+   
+   # Step 6: 生成问答对的核心流程（_pipline 方法）
+   # 6.1: 扩展 Cluster（根据 aug_para 重复）
+   explode_clusters = []
+   explode_questions_types = []
+   for item in clusters:
+       explode_clusters.extend([item] * aug_para)  # 重复 aug_para 次
+       # 根据权重随机选择问题类型
+       weights = [v["weight"] for v in q_dict.values()]
+       random_types = random.choices(list(q_dict.keys()), weights, k=aug_para)
+       explode_questions_types.extend(random_types)
+   
+   # 6.2: 并行生成问题
+   for cluster, question_type in zip(explode_clusters, explode_questions_types):
+       # 构建问题生成输入
+       user_input = f"""For Entity'{cluster["entity_name"]}'：{cluster["entity_description"]}, 
+       here is the relevant content from my interactions:
+       # Content 1 #
+       Title: {note1.title}
+       Content: {note1.content}
+       AI Insight: {note1.insight}
+       ...
+       Please help me generate questions; note that you need to phrase them from my perspective."""
        
-       # 生成多种类型的问题
-       question_types = {
-           "factual": {"weight": 0.3},    # 事实性问题
-           "analytical": {"weight": 0.4}, # 分析性问题
-           "creative": {"weight": 0.3}    # 创造性问题
-       }
-       
-       # 基于 Cluster 内容生成问答对
-       qa_pairs = diversity_generator.generate_data(
-           clusters=[cluster],
-           entities=entities,
-           question_types=question_types
+       # 调用 LLM 生成问题（2-4 个问题）
+       questions = diversity_generator._Q_generate(
+           cluster, question_type, templater, q_dict, language_desc, user_name
        )
+       # 返回格式："Question 1: xxx||Question 2: xxx||Question 3: xxx"
+   
+   # 6.3: 并行生成答案
+   for cluster, question, question_type in zip(flat_clusters, questions, flat_question_types):
+       # 构建答案生成输入
+       user_input = f"""I am {user_name}. Regarding Entity'{cluster["entity_name"]}', 
+       here is some information I previously mentioned:
+       {note1.processed or note1.content}
+       ...
+       Based on the information I have previously recorded, please answer '{question}'."""
+       
+       # 调用 LLM 生成答案
+       answer, answer_type = diversity_generator._A_generate(
+           cluster, question, question_type, templater, language_desc, user_name
+       )
+       # 如果使用 CoT：返回格式包含 <think>...</think><answer>...</answer>
+   
+   # Step 7: 合并所有数据并保存
+   combined_list = data_large + data_mini + data_tiny
+   # 输出格式：
+   # [
+   #   {
+   #     "user": "What is Python?",
+   #     "assistant": "Python is a programming language...",
+   #     "entity_name": "Python",
+   #     "question_type": "factual",
+   #     "answer_type": "factual",
+   #     "doc_id": [1, 2, 3]
+   #   },
+   #   ...
+   # ]
    ```
    **示例结果**: 见 [附录 C.3.2 Diversity 数据格式](#c32-训练数据生成阶段)
 
