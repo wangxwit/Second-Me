@@ -1030,8 +1030,6 @@ if is_cot:
 
 ---
 
-## 10. 在线推理服务架构 (Online Inference Service)
-
 基于 `lpm_kernel/api/domains/kernel2`，实现了复杂的 **上下文编排 (Context Orchestration)**。
 
 ### 10.1 执行流与时序
