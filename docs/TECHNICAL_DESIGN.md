@@ -24,7 +24,7 @@
 ### 第一部分：产品与设计 (Product & Design)
 1. [项目概述](#1-项目概述-executive-summary)
 2. [产品功能规格](#2-产品功能规格-product-specifications)
-3. [典型使用场景](#3-典型使用场景-use-cases)
+3. [典型使用场景详解](#3-典型使用场景详解-use-cases-deep-dive)
 4. [核心设计理念](#4-核心设计理念-core-design-philosophy)
 
 ### 第二部分：架构设计 (Architecture Design)
@@ -190,7 +190,7 @@
 
 系统遵循 **微内核 (Micro-Kernel)** 与 **本地优先 (Local-First)** 的架构原则。
 
-### 3.1 总体架构图
+### 5.1 总体架构图
 ```mermaid
 flowchart TD
     User["用户 / 客户端"] --> Frontend["Next.js 前端 (Brain Console)"]
@@ -1836,7 +1836,7 @@ class Config:
 
 ## 18. 部署架构 (Deployment Architecture)
 
-### 14.1 Docker Compose 部署
+### 18.1 Docker Compose 部署
 
 **服务组成**:
 ```yaml
@@ -1861,14 +1861,14 @@ services:
 *   Backend: 64GB 内存上限 (支持大模型推理)
 *   Frontend: 2GB 内存上限
 
-### 14.2 多平台支持
+### 18.2 多平台支持
 
 **Dockerfile 变体**:
 *   `Dockerfile.backend`: 通用 Linux
 *   `Dockerfile.backend.apple`: Apple Silicon 优化
 *   `Dockerfile.backend.cuda`: CUDA GPU 支持
 
-### 14.3 数据持久化
+### 18.3 数据持久化
 
 **Volume 挂载**:
 *   `./data`: SQLite 数据库、ChromaDB、日志
@@ -1879,7 +1879,7 @@ services:
 
 ## 19. 错误处理与日志系统 (Error Handling & Logging)
 
-### 15.1 日志架构
+### 19.1 日志架构
 
 **日志配置** (`configs/logging.py`):
 *   **应用日志**: 标准 Python logging
@@ -1891,7 +1891,7 @@ services:
 *   文件输出 (`logs/` 目录)
 *   支持日志轮转
 
-### 15.2 错误处理策略
+### 19.2 错误处理策略
 
 **API 错误响应**:
 ```python
@@ -1913,7 +1913,7 @@ except Exception as e:
 
 ## 20. 性能优化策略 (Performance Optimization)
 
-### 16.1 推理优化
+### 20.1 推理优化
 
 **并发控制**:
 *   **严格队列**: `Concurrency=1`，防止 VRAM 溢出
@@ -1924,7 +1924,7 @@ except Exception as e:
 *   **延迟加载**: 仅在需要时加载模型
 *   **显存释放**: 训练前主动释放推理模型显存
 
-### 16.2 向量检索优化
+### 20.2 向量检索优化
 
 **批量处理**:
 *   文档 Embedding 批量生成
@@ -1934,7 +1934,7 @@ except Exception as e:
 *   ChromaDB HNSW 索引自动优化
 *   支持维度不匹配检测与自动重建
 
-### 16.3 前端优化
+### 20.3 前端优化
 
 **SSE 流式渲染**:
 *   增量更新 UI，避免阻塞
@@ -1948,13 +1948,13 @@ except Exception as e:
 
 ## 21. 安全与隐私增强 (Security & Privacy Enhancements)
 
-### 17.1 数据隔离
+### 21.1 数据隔离
 
 **多实例支持**:
 *   每个 Second Me 实例独立数据库
 *   通过 `instance_id` 和 `instance_password` 隔离
 
-### 17.2 隐私保护
+### 21.2 隐私保护
 
 **本地优先**:
 *   所有数据本地存储
@@ -1965,7 +1965,7 @@ except Exception as e:
 
 ## 22. 扩展性设计 (Extensibility)
 
-### 18.1 插件化架构
+### 22.1 插件化架构
 
 **策略模式**:
 *   `BasePromptStrategy`: Prompt 构建策略基类
@@ -1976,7 +1976,7 @@ except Exception as e:
 *   根据 MIME 类型动态选择处理器
 *   支持扩展新的文件类型处理器
 
-### 18.2 多后端支持
+### 22.2 多后端支持
 
 **LLM 客户端抽象** (`common/llm.py`):
 *   统一的 LLM 调用接口
