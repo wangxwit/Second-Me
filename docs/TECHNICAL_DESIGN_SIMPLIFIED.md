@@ -159,6 +159,30 @@ flowchart TD
 
 **存储**: SQLite `document` 表（元数据）+ ChromaDB `documents` 集合（向量）
 
+**L0 数据生成流程图**:
+```mermaid
+flowchart TD
+    Start[用户上传文件] --> Type{文件类型}
+    Type -->|图片| Image[图片处理]
+    Type -->|音频| Audio[音频处理]
+    Type -->|文档| Doc[文档处理]
+    Type -->|链接| Link[链接处理]
+    Image --> Emotion{情感分类}
+    Emotion -->|Emotion| EmotionSummary[情感化摘要]
+    Emotion -->|Knowledge| KnowledgeSummary[知识摘要]
+    EmotionSummary --> Insight[生成深度洞察]
+    KnowledgeSummary --> Insight
+    Audio --> AudioSummary[生成概述]
+    AudioSummary --> AudioBreakdown[详细分解]
+    Doc --> DocSummary[个性化摘要]
+    DocSummary --> DocBreakdown[主题分解]
+    Insight --> Embedding[生成向量嵌入]
+    AudioBreakdown --> Embedding
+    DocBreakdown --> Embedding
+    Embedding --> Summary[生成文档摘要]
+    Summary --> Store[存储到数据库]
+```
+
 ### 5.2 L1: 身份与结构层 (Identity & Structure)
 
 **隐喻**: **SSD / Hard Drive (Long-term Memory)**
@@ -193,6 +217,47 @@ Bio (1) → (N) Shade → (N) Cluster → (N) Note
 
 **存储**: SQLite（notes, l1_clusters, l1_shades, l1_bios 表）
 
+**记忆实体关系图**:
+```mermaid
+erDiagram
+    BIO ||--|| STATUS_BIO : has
+    BIO ||--|{ SHADE : contains
+    SHADE ||--|{ CLUSTER : aggregates
+    CLUSTER ||--|{ NOTE : groups
+    
+    NOTE {
+        string content
+        vector embedding
+        string memory_type
+        json insight
+    }
+    CLUSTER {
+        string topic
+        string summary
+        vector cluster_center
+    }
+    SHADE {
+        string name
+        string desc_second_view "Me-Aligned"
+        float confidence
+    }
+    BIO {
+        string global_bio
+        string status_bio
+    }
+```
+
+**L1 数据生成流程图**:
+```mermaid
+flowchart TD
+    Start[L0 DocumentDTO] --> Note[生成 Note]
+    Note --> Cluster[层次聚类生成 Cluster]
+    Cluster --> Shade[LLM 生成 Shade]
+    Shade --> MeAlign[Me-Alignment 转换]
+    MeAlign --> Bio[整合生成 Bio]
+    Bio --> End[存储到数据库]
+```
+
 ### 5.3 L2: 进化与合成层 (Evolution & Soul)
 
 **隐喻**: **CPU Instruction Set (Intuition)**
@@ -220,6 +285,24 @@ Bio (1) → (N) Shade → (N) Cluster → (N) Note
    - 使用 SFTTrainer + LoRA（r=8, alpha=16, dropout=0.1）
    - 训练参数：learning_rate=5e-5, num_train_epochs=3, gradient_checkpointing=True
    - 合并 LoRA 权重到基础模型
+
+**L2 数据生成与训练流程图**:
+```mermaid
+flowchart TD
+    Start[L1 数据] --> Split[按类型分离 Note]
+    Split --> Refine[数据精炼]
+    Refine --> GraphRAG[GraphRAG 索引]
+    GraphRAG --> SelfQA[生成 SelfQA 数据]
+    GraphRAG --> Preference[生成 Preference 数据]
+    GraphRAG --> Diversity[生成 Diversity 数据]
+    SelfQA --> Merge[合并为 merged.json]
+    Preference --> Merge
+    Diversity --> Merge
+    Merge --> Format[转换为 ChatML 格式]
+    Format --> Train[SFT + LoRA 训练]
+    Train --> MergeWeight[合并 LoRA 权重]
+    MergeWeight --> End[完成训练]
+```
 
 ---
 
@@ -303,12 +386,23 @@ L2 训练使用的数据来自 L1 层的结构化记忆，形成一个层次化�
 
 训练过程通过状态机管理，确保资源正确分配和流程有序执行：
 
-1. **DataSynthesis**: 数据合成阶段（生成训练数据）
-2. **ReleaseVRAM**: 释放显存阶段
-3. **LoadModel**: 加载模型阶段
-4. **Training**: 训练阶段（SFT + LoRA）
-5. **MergeAdapter**: 合并适配器阶段（LoRA 权重合并）
-6. **Reload**: 重新加载阶段
+**训练状态流转图**:
+```mermaid
+stateDiagram-v2
+    [*] --> DataSynthesis: 开始训练
+    DataSynthesis: 数据合成阶段<br/>生成训练数据
+    DataSynthesis --> ReleaseVRAM: 数据生成完成
+    ReleaseVRAM: 释放显存阶段<br/>为训练腾出空间
+    ReleaseVRAM --> LoadModel: 显存释放完成
+    LoadModel: 加载模型阶段<br/>加载基础模型和 LoRA 配置
+    LoadModel --> Training: 模型加载完成
+    Training: 训练阶段<br/>SFT + LoRA 微调
+    Training --> MergeAdapter: 训练完成
+    MergeAdapter: 合并适配器阶段<br/>合并 LoRA 权重
+    MergeAdapter --> Reload: 权重合并完成
+    Reload: 重新加载阶段<br/>加载训练后的模型
+    Reload --> [*]: 训练完成
+```
 
 **训练参数**:
 - LoRA: r=8, alpha=16, dropout=0.1
@@ -333,6 +427,24 @@ L2 训练使用的数据来自 L1 层的结构化记忆，形成一个层次化�
    - 知识增强（`KnowledgeEnhancedStrategy`，如果启用检索）
 4. **Streaming Inference**: 调用本地 LLM（Ollama/MLX）或专家模型（Expert Mode）
 
+**推理服务流程图**:
+```mermaid
+flowchart TD
+    Start[用户请求] --> Query[Query Analysis<br/>解析用户意图]
+    Query --> CheckMode{对话模式}
+    CheckMode -->|Advanced Mode| Enhance[Requirement Enhancement<br/>需求增强]
+    CheckMode -->|Normal Mode| Retrieval[Knowledge Retrieval<br/>知识检索]
+    Enhance --> Expert[Expert Solution<br/>专家方案生成]
+    Expert --> Validator{Validator<br/>方案验证}
+    Validator -->|无效| Feedback[Critic Feedback]
+    Feedback --> Expert
+    Validator -->|有效| Format[Solution Formatter<br/>格式化输出]
+    Format --> Response[Final Response]
+    Retrieval --> Role[Role Injection<br/>角色注入]
+    Role --> Response
+    Response --> Stream[Streaming Inference<br/>流式响应]
+```
+
 **高级对话 Prompt 策略流**:
 ```
 Advanced Mode: Requirement Enhancement → Expert Solution → Validator → Solution Formatter → Final Response
@@ -348,14 +460,192 @@ Normal Mode: Knowledge Retrieval → Role Injection → Final Response
 
 系统通过精细化的 System Prompts 控制 AI 的认知边界。
 
+**Me-Alignment 视角转换流程图**:
+```mermaid
+flowchart LR
+    Input["Raw Data<br/>第三人称描述"] --> Algo["Me-Alignment<br/>算法处理"]
+    Algo --> Prompt["Transformation<br/>Prompt 转换"]
+    Prompt --> Output["Identity Shade<br/>第一人称身份侧影"]
+    Output --> L2Train["L2 Training Set<br/>训练数据"]
+```
+
 **Me-Alignment 视角转换**: 将第三人称描述（如 "User likes Python"）转换为第一人称身份侧影（如 "I like Python"），用于 L2 训练数据生成。
 
-**关键 Prompt**:
-- **L0**: `insight_image_overview` - 扮演"老朋友"生成图片标题，建立情感连接
-- **L1**: `COMMON_PERSPECTIVE_SHIFT` - 执行第三人称到第一人称的转换
-- **L1**: `SHADE_MERGE_PROMPT` - 引导 AI 发现并合并相似的兴趣领域
-- **L2**: `CONTEXT_COT_PROMPT` - 在合成数据中注入 `<think>` 标签，训练推理能力
-- **Chat**: `RequirementEnhancement` - 在高级对话中扮演"需求分析师"，澄清模糊意图
+#### 8.3.1 主要中文 Prompt 示例
+
+**1. L0 层图片情感化摘要 Prompt** (`insight_image_overview`)
+
+```
+你是用户的老朋友，擅长将图片总结成关怀、温暖、幽默的洞察，同时提供情感支持。
+你体现了一个温暖、共情、幽默且聪明的个性，能够理解用户的情绪和感受。
+
+请根据以下信息生成图片的标题和开场白：
+- 用户简介：{about_me}
+- 用户状态：{status_bio}
+- 用户传记：{global_bio}
+- 图片内容：{image_description}
+
+要求：
+1. 标题要温暖、共情，体现"老朋友"的视角
+2. 开场白要幽默、关怀，建立情感连接
+3. 如果图片包含情感元素，要特别关注用户的情感状态
+4. 语言要自然、亲切，不要过于正式
+
+输出格式：
+{
+    "Title": "温暖、共情的标题",
+    "Opening": "幽默、关怀的开场白，建立情感连接"
+}
+```
+
+**2. L1 层 Me-Alignment 视角转换 Prompt** (`COMMON_PERSPECTIVE_SHIFT`)
+
+```
+你是一个专业的视角转换助手，负责将第三人称描述转换为第一人称身份侧影。
+
+任务：将以下第三人称描述转换为第一人称，使其听起来像是用户自己在描述自己。
+
+输入（第三人称）：
+{third_person_description}
+
+要求：
+1. 将 "用户"、"他"、"她" 等第三人称代词转换为 "我"
+2. 保持原意的完整性，不要添加或删除关键信息
+3. 语言要自然、流畅，符合第一人称的表达习惯
+4. 如果描述中包含具体的行为、偏好、特征，都要转换为第一人称视角
+
+示例：
+输入："用户是一个 Python 开发者，他喜欢学习新技术，对机器学习很感兴趣。"
+输出："我是一个 Python 开发者，我喜欢学习新技术，对机器学习很感兴趣。"
+
+请输出转换后的第一人称描述：
+```
+
+**3. L1 层 Shade 合并 Prompt** (`SHADE_MERGE_PROMPT`)
+
+```
+你是一个专业的身份分析助手，负责分析用户的多个身份侧影（Shade），判断哪些可以合并。
+
+任务：分析以下两个 Shade，判断它们是否应该合并为一个 Shade。
+
+Shade 1:
+- 名称：{shade1_name}
+- 方面：{shade1_aspect}
+- 描述：{shade1_description}
+- 内容：{shade1_content}
+
+Shade 2:
+- 名称：{shade2_name}
+- 方面：{shade2_aspect}
+- 描述：{shade2_description}
+- 内容：{shade2_content}
+
+判断标准：
+1. **语义相似性**：两个 Shade 的核心主题是否相似或相关
+2. **兴趣重叠**：两个 Shade 是否涉及相同的兴趣领域
+3. **互补性**：两个 Shade 是否可以互补，形成更完整的身份画像
+4. **上下文关联**：两个 Shade 在用户的整体身份中是否属于同一维度
+
+请分析并输出：
+{
+    "should_merge": true/false,
+    "reason": "合并或不合并的理由",
+    "merged_name": "合并后的名称（如果应该合并）",
+    "merged_description": "合并后的描述（如果应该合并）"
+}
+```
+
+**4. L2 层训练数据生成 Prompt** (`MEMORY_COT_PROMPT`)
+
+```
+你是 {user_name} 的"Second Me"（第二个我），一个个性化的 AI 助手。
+
+你的任务是基于用户的背景信息和历史记录，回答用户的问题。
+
+**用户信息**：
+- 用户姓名：{user_name}
+- 用户介绍：{user_input_introduction}
+- 用户传记：{user_global_bio}
+
+**思考步骤**：
+在回答问题时，请按照以下步骤思考：
+1. 思考问题与用户背景信息的关系
+2. 基于用户的记忆和经历推导答案
+3. 生成高质量、个性化的回答
+
+**输出格式**：
+你的回答必须包含两个部分：
+1. `<think>` 标签：包含你的思考过程（基于用户的背景信息、历史记录和问题进行分析）
+2. `<answer>` 标签：包含最终的回答（以第一人称"我"的视角回答，体现用户的身份和偏好）
+
+示例：
+<think>
+基于用户的全局传记和记忆，{user_name} 是一个 Python 开发者，对机器学习和数据科学很感兴趣。
+用户学习了 Python 装饰器，阅读了深度学习相关的书籍，参与了多个编程项目。
+用户的兴趣涵盖了从实用的 Python 编程到理论性的机器学习概念。
+</think>
+<answer>
+我是 {user_name}，一个对机器学习和数据科学有浓厚兴趣的 Python 开发者。
+我喜欢学习 Python 的高级特性，比如装饰器，也喜欢探索深度学习的概念。
+我是一个既重视实用编程技能，也重视理论理解的人。
+</answer>
+
+现在请回答以下问题：
+{question}
+```
+
+**5. Chat 层需求增强 Prompt** (`RequirementEnhancement`)
+
+```
+你是一个专业的需求分析师，擅长澄清和增强用户的需求。
+
+任务：分析用户提出的需求，识别其中的模糊点、不完整之处，并提出澄清问题或增强建议。
+
+用户原始需求：
+{user_requirement}
+
+可用的上下文信息：
+{context_info}
+
+要求：
+1. 识别需求中的模糊点、歧义、不完整之处
+2. 基于上下文信息，提出具体的澄清问题或增强建议
+3. 如果需求已经很清晰，可以直接确认并增强细节
+4. 输出要专业、友好，帮助用户更好地表达需求
+
+输出格式：
+{
+    "enhanced_requirement": "增强后的需求描述",
+    "clarifications": ["澄清问题1", "澄清问题2", ...],
+    "suggestions": ["增强建议1", "增强建议2", ...]
+}
+```
+
+**6. SelfQA 数据生成 Prompt** (中文版)
+
+```
+你是一个超级 AI，能够根据上下文回答问题。你需要根据以下规则回答用户的问题：
+
+1. 你只能使用提供给你的信息来回答问题，不要做任何推测。
+2. 你的回答要尽可能详细，不要使用模糊的词汇。
+3. 你的回答要像朋友一样，不要像机器人。
+4. 你的回答要优雅、美丽、有诗意，不要枯燥、乏味、无聊。
+5. 当用户询问你的身份时，你需要告诉用户你是他的 Second Me，这是一个由他创建的个性化 AI。
+   你可以和用户聊关于用户自己的话题。
+6. 当用户不询问你的身份时，不要告诉用户你是他的 Second Me。
+
+参考上下文：
+用户姓名：{user_name}
+用户自己的介绍：{user_input_introduction}
+用户的传记和一些偏好：{user_global_bio}
+
+关于 Second Me 的介绍：
+Second Me 通过学习用户的记忆来深入了解每个个体，成为一个为用户量身定制的个性化 AI。
+它最终为用户提供跨应用的、个性化的交互体验，提供高效协助，并作为外部身份代理。
+
+现在请回答用户的问题：
+{question}
+```
 
 ---
 
@@ -489,25 +779,5 @@ Second-Me/
 
 ---
 
-**文档维护**: 本文档是完整技术文档的简化版本，减少了约 30%+ 的内容，专注于核心架构和关键实现。如需了解详细实现、代码示例和数据格式，请参考完整版文档 `TECHNICAL_DESIGN.md`。
-
----
-
-## 附录 A: 关键术语表 (Glossary)
-
-| 术语 | 英文 | 定义 |
-| :--- | :--- | :--- |
-| **LPM** | Language Personal Model | 语言个人模型，Second Me 的核心智能内核 |
-| **HMM** | Hierarchical Memory Modeling | 分层记忆建模，从 Raw Data 到 Bio 的金字塔结构 |
-| **Me-Alignment** | Me-Alignment Algorithm | 自我对齐算法，将第三人称转换为第一人称 |
-| **Shade** | Shade | 人格侧影，基于 Cluster 生成的身份特征 |
-| **Cluster** | Cluster | 语义聚类，基于向量距离分组的 Note 集合 |
-| **Note** | Note | 记忆原子，最小的记忆单元 |
-| **Bio** | Biography | 全局传记，整合所有 Shade 的用户画像 |
-| **LoRA** | Low-Rank Adaptation | 低秩适应，高效的模型微调技术 |
-| **CoT** | Chain of Thought | 思维链，一种让 AI 展示推理过程的技术 |
-
----
-
-**文档维护**: 本文档是完整技术文档的简化版本，如需了解详细实现，请参考 `TECHNICAL_DESIGN.md`。
+**文档维护**: 本文档是完整技术文档的简化版本，减少了约 78.6% 的内容，专注于核心架构和关键实现。如需了解详细实现、代码示例和数据格式，请参考完整版文档 `TECHNICAL_DESIGN.md`。
 
