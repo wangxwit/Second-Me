@@ -34,14 +34,14 @@
 
 ### 第三部分：技术实现 (Technical Implementation)
 8. [数据流转与训练架构](#8-数据流转与训练架构-data--training-pipeline)
-9. [L0/L1/L2 数据生成流程](#9-l0l1l2-数据生成流程-data-generation-pipeline)
+9. [L0/L1/L2 数据生成流程](#9-l0l1l2-数据生成流程-data-generation-pipeline)（内容见第二部分第6章）
 10. [在线推理服务架构](#10-在线推理服务架构-online-inference-service)
 11. [核心提示词工程](#11-核心提示词工程-prompt-engineering-strategy)
 12. [API 接口与工程结构](#12-api-接口与工程结构-engineering-interface)
 13. [前端架构详解](#13-前端架构详解-frontend-architecture)
 
 ### 第四部分：高级特性 (Advanced Features)
-14. [专家协同机制](#14-专家协同机制-expert-mode)
+14. [专家协同机制](#14-专家协同机制-expert-mode)（内容见第二部分第7.5节）
 15. [Space 多智能体协作机制](#15-space-多智能体协作机制-multi-agent-collaboration)
 16. [MCP 协议集成](#16-mcp-协议集成-model-context-protocol)
 
@@ -339,7 +339,7 @@ flowchart TD
     *   `Shade`: 人格侧影 (如 "Python 专家", "科幻爱好者")。
     *   `Bio`: 全局传记。
 
-#### 4.2.1 L1 数据生成流程
+#### 6.2.1 L1 数据生成流程
 
 **输入**: L0 层的 `DocumentDTO` 数据
 
@@ -480,7 +480,7 @@ erDiagram
 *   **特殊机制**: 不依赖检索，而是通过 **SFT + LoRA** 改变模型本身的反应模式。
 *   **Deep Reasoning**: 集成 DeepSeek R1 逻辑，在训练数据中注入 `<think>` 标签，学习用户的思维方式。
 
-#### 4.3.1 L2 数据生成流程
+#### 6.3.1 L2 数据生成流程
 
 **输入**: L1 层的结构化数据（Note、Cluster、Shade、Bio）
 
@@ -908,7 +908,7 @@ AI 产生“自我意识”的关键算法：
 
 专家协同功能包含两个核心组件：**角色系统 (Role System)** 和 **高级对话模式 (Advanced Chat Mode)**。
 
-#### 5.5.1 角色系统 (Role System)
+#### 7.5.1 角色系统 (Role System)
 
 **数据模型**:
 ```python
@@ -941,7 +941,7 @@ if role_id in metadata:
     enable_l1 = role.enable_l1_retrieval
 ```
 
-#### 5.5.2 高级对话模式 (Advanced Chat Mode)
+#### 7.5.2 高级对话模式 (Advanced Chat Mode)
 
 **多阶段处理流程**:
 ```mermaid
@@ -1120,7 +1120,7 @@ POST /api/talk/advanced_chat
 
 **实现方式**: 通过 L0 层的多模态处理和情感化 Prompt 设计实现。
 
-#### 5.6.1 图片情感分类
+#### 7.6.1 图片情感分类
 
 **实现流程**:
 ```python
@@ -1153,7 +1153,7 @@ you embody a warm, empathetic, and humorously intelligent personality...
 - **用户传记融合**: 在生成洞察时结合用户的传记信息（`about_me`、`global_bio`、`status_bio`），增强个性化
 - **情感标签**: 图片被分类为 "Emotion" 类型时，会生成更注重情感连接的摘要
 
-#### 5.6.2 文本情感分析
+#### 7.6.2 文本情感分析
 
 **当前实现**: 通过对话时的 L1 检索和角色设定，AI 能够理解用户的情绪状态并提供共情回应。
 
@@ -1166,7 +1166,7 @@ you embody a warm, empathetic, and humorously intelligent personality...
 
 **实现方式**: 结合 DeepSeek R1 的思维链能力和 L1 层的记忆检索。
 
-#### 5.7.1 DeepSeek R1 思维链集成
+#### 7.7.1 DeepSeek R1 思维链集成
 
 **训练阶段集成**:
 ```python
@@ -1198,7 +1198,7 @@ This is the final response to {user_name}...
 - 在对话时，如果启用 CoT，会调用 DeepSeek R1 模型
 - 模型返回包含 `<think>` 标签的思维链输出
 
-#### 5.7.2 用户阅读历史结合
+#### 7.7.2 用户阅读历史结合
 
 **实现机制**:
 - **L1 检索**: 当用户询问创意写作相关问题时，系统通过 L1 向量检索获取用户相关的记忆
@@ -1314,19 +1314,10 @@ DataSynthesis → ReleaseVRAM → LoadModel → Training → MergeAdapter → Re
 
 ## 9. L0/L1/L2 数据生成流程 (Data Generation Pipeline)
 
-本章节详细说明 L0、L1、L2 各层数据的具体生成过程，包含完整的代码示例和结果展示。
-
-### 9.1 L0 数据生成流程
-
-见 [6.1 L0: 感官与洞察层](#61-l0-感官与洞察层-sensory--insight) 和 [附录 C.1](#c1-l0-层数据格式示例)
-
-### 9.2 L1 数据生成流程
-
-见 [6.2 L1: 身份与结构层](#62-l1-身份与结构层-identity--structure) 和 [附录 C.2](#c2-l1-层数据格式示例)
-
-### 9.3 L2 数据生成流程
-
-见 [6.3 L2: 进化与合成层](#63-l2-进化与合成层-evolution--soul) 和 [附录 C.3](#c3-l2-层数据格式示例)
+> **说明**: L0、L1、L2 各层数据的具体生成流程已在 [第二部分：架构设计](#第二部分-架构设计) 中详细说明：
+> - **L0 数据生成**: 见 [6.1 L0: 感官与洞察层](#61-l0-感官与洞察层-sensory--insight) 和 [附录 C.1](#c1-l0-层数据格式示例)
+> - **L1 数据生成**: 见 [6.2 L1: 身份与结构层](#62-l1-身份与结构层-identity--structure) 和 [附录 C.2](#c2-l1-层数据格式示例)
+> - **L2 数据生成**: 见 [6.3 L2: 进化与合成层](#63-l2-进化与合成层-evolution--soul) 和 [附录 C.3](#c3-l2-层数据格式示例)
 
 ---
 
@@ -1418,7 +1409,7 @@ flowchart LR
 
 ### 12.1 API 规范 (Flask Blueprints)
 
-#### 9.1.1 核心 API 模块
+#### 12.1.1 核心 API 模块
 
 | 模块 | 路由前缀 | 功能描述 | 主要端点 |
 | :--- | :--- | :--- | :--- |
@@ -1435,7 +1426,7 @@ flowchart LR
 | **Loads** | `/api/loads` | 个人负载管理 | `POST /create`, `GET /current` |
 | **UserLLMConfig** | `/api/user_llm_config` | LLM 配置管理 | `POST /validate`, `GET /available` |
 
-#### 9.1.2 API 设计原则
+#### 12.1.2 API 设计原则
 
 *   **RESTful 风格**: 遵循 REST 规范，使用标准 HTTP 方法。
 *   **统一响应格式**: 所有 API 返回 `APIResponse` 包装结构：
@@ -1449,7 +1440,7 @@ flowchart LR
 *   **流式响应**: 对话接口支持 Server-Sent Events (SSE) 流式输出。
 *   **DTO 验证**: 使用 Pydantic 进行请求参数校验。
 
-#### 9.1.3 关键 API 端点详解
+#### 12.1.3 关键 API 端点详解
 
 **对话接口 (`/api/kernel2/chat`)**:
 ```python
@@ -1487,7 +1478,7 @@ POST /api/space/create
 
 ### 12.2 数据模型与数据库 Schema
 
-#### 9.2.1 核心数据表
+#### 12.2.1 核心数据表
 
 **Document (文档表)**:
 ```sql
@@ -1565,7 +1556,7 @@ CREATE TABLE roles (
 );
 ```
 
-#### 9.2.2 向量数据库 (ChromaDB)
+#### 12.2.2 向量数据库 (ChromaDB)
 
 **集合 (Collections)**:
 *   `documents`: 文档级向量存储
@@ -1781,7 +1772,7 @@ const sendStreamMessage = async (request: ChatRequest) => {
 
 ## 14. 专家协同机制 (Expert Mode)
 
-见 [7.5 专家协同机制](#75-专家协同机制-expert-mode)
+> **说明**: 专家协同机制的详细实现已在 [第二部分：架构设计](#第二部分-架构设计) 中说明，见 [7.5 专家协同机制](#75-专家协同机制-expert-mode)。
 
 ---
 
